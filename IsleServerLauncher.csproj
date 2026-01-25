@@ -1,0 +1,30 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <ApplicationIcon>AppIcon.ico</ApplicationIcon>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <Version>1.0.1</Version>
+    <FileVersion>1.0.1.0</FileVersion>
+    <AssemblyVersion>1.0.1.0</AssemblyVersion>
+    <Product>The Isle Evrima Server Launcher</Product>
+    <Copyright>Copyright (c) 2026 Sibercat</Copyright>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="steamcmd.exe" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="AppIcon.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="steamcmd.exe" />
+  </ItemGroup>
+
+</Project>
