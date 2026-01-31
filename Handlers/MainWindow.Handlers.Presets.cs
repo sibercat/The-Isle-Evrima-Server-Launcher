@@ -331,7 +331,7 @@ namespace IsleServerLauncher
                 Owner = this
             };
 
-            var textBox = new TextBox
+            var textBox = new System.Windows.Controls.TextBox
             {
                 Margin = new Thickness(10, 10, 10, 0),
                 Text = defaultName ?? ""
