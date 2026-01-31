@@ -8,6 +8,7 @@ global using CheckBox = System.Windows.Controls.CheckBox;
 global using ComboBox = System.Windows.Controls.ComboBox;
 global using HorizontalAlignment = System.Windows.HorizontalAlignment;
 global using ListBox = System.Windows.Controls.ListBox;
+global using MenuItem = System.Windows.Controls.MenuItem;
 global using MessageBox = System.Windows.MessageBox;
 global using OpenFileDialog = Microsoft.Win32.OpenFileDialog;
 global using Orientation = System.Windows.Controls.Orientation;
