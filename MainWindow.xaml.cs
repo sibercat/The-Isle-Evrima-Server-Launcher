@@ -7,9 +7,12 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
+using System.Diagnostics;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using IsleServerLauncher.Services;
+using System.IO;
+using Microsoft.Win32;
 
 namespace IsleServerLauncher
 {
@@ -36,6 +39,7 @@ namespace IsleServerLauncher
         private System.Windows.Threading.DispatcherTimer? _wipeCorpsesTimer;
         private System.Windows.Threading.DispatcherTimer? _rconSaveTimer;
         private string _currentRestartMessage = "Server will restart in {minutes} minute(s)!";
+        private bool _scheduledRestartScriptPending = false;
         private DateTime? _nextWipeCorpsesAt;
         private readonly HashSet<int> _sentWipeWarnings = new HashSet<int>();
 
@@ -116,6 +120,7 @@ namespace IsleServerLauncher
                 _scheduledRestartService.RestartScheduled += OnRestartScheduled;
                 _scheduledRestartService.RestartTriggered += async (s, e) =>
                 {
+                    _scheduledRestartScriptPending = true;
                     await Dispatcher.InvokeAsync(async () => await GracefulShutdownAsync(restartAfter: true));
                 };
                 _scheduledRestartService.WarningIssued += OnRestartWarningIssued;
@@ -244,7 +249,7 @@ namespace IsleServerLauncher
                 chkValidateFiles, chkDisableStreaming, cmbPriority, chkUseAllCores, pnlCpuCores,
                 chkEnableCrashDetection, chkAutoRestart, cmbMaxRestartAttempts,
                 chkScheduledRestartEnabled, cmbRestartInterval, cmbWarningMinutes,
-                txtRestartMessage,
+                txtRestartMessage, chkRestartScriptEnabled, txtRestartScriptPath, txtRestartScriptDelaySeconds,
                 chkEnableDiscordWebhook, txtDiscordWebhookUrl, txtDiscordInvite,
                 chkAutoBackupEnabled, cmbBackupInterval,
                 chkEnableChatMonitor, chkEnableChatWebhook, txtChatWebhookUrl,
@@ -321,7 +326,7 @@ namespace IsleServerLauncher
                     txtQueueJoinTimeoutSeconds, txtQueueHeartbeatIntervalSeconds, txtQueueHeartbeatTimeoutSeconds, txtQueueHeartbeatMaxMisses,
                     chkValidateFiles, chkDisableStreaming, cmbPriority, chkUseAllCores, pnlCpuCores,
                     chkEnableCrashDetection, chkAutoRestart, cmbMaxRestartAttempts,
-                    chkScheduledRestartEnabled, cmbRestartInterval, cmbWarningMinutes, txtRestartMessage,
+                    chkScheduledRestartEnabled, cmbRestartInterval, cmbWarningMinutes, txtRestartMessage, chkRestartScriptEnabled, txtRestartScriptPath, txtRestartScriptDelaySeconds,
                     chkEnableDiscordWebhook, txtDiscordWebhookUrl, txtDiscordInvite,
                     chkAutoBackupEnabled, cmbBackupInterval,
                     chkEnableChatMonitor, chkEnableChatWebhook, txtChatWebhookUrl,
@@ -547,6 +552,9 @@ namespace IsleServerLauncher
             sb.Append(config.RestartIntervalHours).Append('|');
             sb.Append(config.RestartWarningMinutes).Append('|');
             sb.Append(config.RestartMessage).Append('|');
+            sb.Append(config.RestartScriptPath).Append('|');
+            sb.Append(config.RestartScriptDelaySeconds).Append('|');
+            sb.Append(config.RestartScriptEnabled).Append('|');
             sb.Append(config.EnableDiscordWebhook).Append('|');
             sb.Append(config.DiscordWebhookUrl).Append('|');
             sb.Append(config.DiscordInvite).Append('|');
@@ -799,6 +807,46 @@ namespace IsleServerLauncher
             else
             {
                 txtNextBackup.Text = "Next backup: Not scheduled";
+            }
+        }
+
+        private async Task RunPostRestartScriptIfNeededAsync()
+        {
+            if (!_scheduledRestartScriptPending) return;
+            _scheduledRestartScriptPending = false;
+
+            var config = GetCurrentConfiguration();
+            if (!config.RestartScriptEnabled) return;
+            if (string.IsNullOrWhiteSpace(config.RestartScriptPath)) return;
+
+            string scriptPath = config.RestartScriptPath.Trim();
+            if (!File.Exists(scriptPath))
+            {
+                _logger.Warning($"Post-restart script not found: {scriptPath}");
+                return;
+            }
+
+            int delaySeconds = Math.Max(0, config.RestartScriptDelaySeconds);
+            if (delaySeconds > 0)
+            {
+                _logger.Info($"Delaying post-restart script by {delaySeconds} seconds.");
+                await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+            }
+
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = scriptPath,
+                    WorkingDirectory = Path.GetDirectoryName(scriptPath) ?? "",
+                    UseShellExecute = true
+                };
+                Process.Start(psi);
+                _logger.Info($"Post-restart script launched: {scriptPath}");
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to launch post-restart script: {ex.Message}", ex);
             }
         }
 
