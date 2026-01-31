@@ -37,7 +37,7 @@ namespace IsleServerLauncher.Services
             ComboBox cmbPriority, CheckBox chkUseAllCores, Panel pnlCpuCores,
             CheckBox chkEnableCrashDetection, CheckBox chkAutoRestart, ComboBox cmbMaxRestartAttempts,
             CheckBox chkScheduledRestartEnabled, ComboBox cmbRestartInterval, ComboBox cmbWarningMinutes,
-            TextBox txtRestartMessage,
+            TextBox txtRestartMessage, CheckBox chkRestartScriptEnabled, TextBox txtRestartScriptPath, TextBox txtRestartScriptDelaySeconds,
             CheckBox chkEnableDiscordWebhook, TextBox txtDiscordWebhookUrl, TextBox txtDiscordInvite,
             CheckBox chkAutoBackupEnabled, ComboBox cmbBackupInterval,
             CheckBox chkEnableChatMonitor, CheckBox chkEnableChatWebhook, TextBox txtChatWebhookUrl,
@@ -165,6 +165,9 @@ namespace IsleServerLauncher.Services
                 };
 
                 txtRestartMessage.Text = config.RestartMessage;
+                chkRestartScriptEnabled.IsChecked = config.RestartScriptEnabled;
+                txtRestartScriptPath.Text = config.RestartScriptPath;
+                txtRestartScriptDelaySeconds.Text = config.RestartScriptDelaySeconds.ToString();
                 chkEnableDiscordWebhook.IsChecked = config.EnableDiscordWebhook;
                 txtDiscordWebhookUrl.Text = config.DiscordWebhookUrl;
                 txtDiscordInvite.Text = config.DiscordInvite;
@@ -272,7 +275,7 @@ namespace IsleServerLauncher.Services
             ComboBox cmbPriority, CheckBox chkUseAllCores, Panel pnlCpuCores,
             CheckBox chkEnableCrashDetection, CheckBox chkAutoRestart, ComboBox cmbMaxRestartAttempts,
             CheckBox chkScheduledRestartEnabled, ComboBox cmbRestartInterval, ComboBox cmbWarningMinutes,
-            TextBox txtRestartMessage,
+            TextBox txtRestartMessage, CheckBox chkRestartScriptEnabled, TextBox txtRestartScriptPath, TextBox txtRestartScriptDelaySeconds,
             CheckBox chkEnableDiscordWebhook, TextBox txtDiscordWebhookUrl, TextBox txtDiscordInvite,
             CheckBox chkAutoBackupEnabled, ComboBox cmbBackupInterval,
             CheckBox chkEnableChatMonitor, CheckBox chkEnableChatWebhook, TextBox txtChatWebhookUrl,
@@ -395,6 +398,9 @@ namespace IsleServerLauncher.Services
                 },
 
                 RestartMessage = txtRestartMessage.Text ?? "Server will restart in {minutes} minute(s)!",
+                RestartScriptEnabled = chkRestartScriptEnabled.IsChecked.GetValueOrDefault(),
+                RestartScriptPath = txtRestartScriptPath.Text ?? "",
+                RestartScriptDelaySeconds = int.TryParse(txtRestartScriptDelaySeconds.Text, out int restartDelay) ? restartDelay : 0,
                 EnableDiscordWebhook = chkEnableDiscordWebhook.IsChecked.GetValueOrDefault(),
                 DiscordWebhookUrl = txtDiscordWebhookUrl.Text ?? "",
                 DiscordInvite = txtDiscordInvite.Text ?? "",
