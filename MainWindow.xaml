@@ -31,6 +31,9 @@
                 <MenuItem Header="Fix SSL Certificate Error (Admin)" Click="btnFixSSL_Click"
                           ToolTip="Installs Amazon Root CA 1 to fix 'libcurl error 60' connecting to Epic Online Services."/>
                 <Separator/>
+                <MenuItem Header="Check for Updates" Click="btnCheckUpdates_Click"
+                          ToolTip="Check GitHub Releases for a newer version."/>
+                <Separator/>
                 <MenuItem Header="Troubleshooting Guide" Click="btnTroubleshooting_Click"/>
                 <MenuItem Header="About" Click="btnAbout_Click"/>
             </MenuItem>
