@@ -7,7 +7,7 @@ namespace IsleServerLauncher.Services
     public class ScheduledRestartService
     {
         private readonly ILogger _logger;
-        private Timer? _restartTimer;
+        private System.Threading.Timer? _restartTimer;
         private CancellationTokenSource? _cancellationTokenSource;
 
         private bool _isEnabled;
@@ -65,7 +65,7 @@ namespace IsleServerLauncher.Services
             RestartScheduled?.Invoke(this, interval);
 
             // Set up timer to check every minute
-            _restartTimer = new Timer(CheckRestartTime, null, TimeSpan.Zero, TimeSpan.FromMinutes(1));
+            _restartTimer = new System.Threading.Timer(CheckRestartTime, null, TimeSpan.Zero, TimeSpan.FromMinutes(1));
         }
 
         /// <summary>
