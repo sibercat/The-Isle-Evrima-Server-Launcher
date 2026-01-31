@@ -237,7 +237,7 @@ namespace IsleServerLauncher
                 Background = (System.Windows.Media.Brush)Application.Current.Resources["WindowBackgroundBrush"]
             };
 
-            var txtData = new TextBox
+            var txtData = new System.Windows.Controls.TextBox
             {
                 Text = data,
                 AcceptsReturn = true,
