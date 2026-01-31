@@ -102,6 +102,14 @@ namespace IsleServerLauncher.Services
         public string DiscordWebhookUrl { get; set; } = "";
         public string DiscordInvite { get; set; } = "";
 
+        // Mods
+        public string ModLoaderPath { get; set; } = "";
+        public string ModDllPath { get; set; } = "";
+        public string ModConfigDir { get; set; } = "";
+        public bool UseModBatInjection { get; set; } = false;
+        public bool AutoInjectAfterRestart { get; set; } = false;
+        public int AutoInjectDelaySeconds { get; set; } = 5;
+
         // Automatic Backups
         public bool AutoBackupEnabled { get; set; } = false;
         public int BackupIntervalHours { get; set; } = 6;
@@ -334,6 +342,16 @@ namespace IsleServerLauncher.Services
                     // Discord Webhook
                     config.EnableDiscordWebhook = GetBoolValue(settings, "EnableDiscordWebhook");
                     config.DiscordWebhookUrl = GetConfigValue(settings, "DiscordWebhookUrl") ?? "";
+
+                    // Mods
+                    config.ModLoaderPath = GetConfigValue(settings, "ModLoaderPath") ?? "";
+                    config.ModDllPath = GetConfigValue(settings, "ModDllPath") ?? "";
+                    config.ModConfigDir = GetConfigValue(settings, "ModConfigDir") ?? "";
+                    config.UseModBatInjection = GetBoolValue(settings, "UseModBatInjection");
+                    config.AutoInjectAfterRestart = GetBoolValue(settings, "AutoInjectAfterRestart");
+                    config.AutoInjectDelaySeconds = int.TryParse(GetConfigValue(settings, "AutoInjectDelaySeconds") ?? "5", out int autoInjectDelay)
+                        ? autoInjectDelay
+                        : 5;
 
                     // Automatic Backups
                     config.AutoBackupEnabled = GetBoolValue(settings, "AutoBackupEnabled");
@@ -722,6 +740,14 @@ namespace IsleServerLauncher.Services
                 // Discord Webhook
                 settings.AppendLine($"EnableDiscordWebhook={config.EnableDiscordWebhook.ToString().ToLower()}");
                 settings.AppendLine($"DiscordWebhookUrl={config.DiscordWebhookUrl}");
+
+                // Mods
+                settings.AppendLine($"ModLoaderPath={config.ModLoaderPath}");
+                settings.AppendLine($"ModDllPath={config.ModDllPath}");
+                settings.AppendLine($"ModConfigDir={config.ModConfigDir}");
+                settings.AppendLine($"UseModBatInjection={config.UseModBatInjection.ToString().ToLower()}");
+                settings.AppendLine($"AutoInjectAfterRestart={config.AutoInjectAfterRestart.ToString().ToLower()}");
+                settings.AppendLine($"AutoInjectDelaySeconds={config.AutoInjectDelaySeconds}");
 
                 // Automatic Backups
                 settings.AppendLine($"AutoBackupEnabled={config.AutoBackupEnabled.ToString().ToLower()}");
