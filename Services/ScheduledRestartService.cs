@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -13,6 +15,8 @@ namespace IsleServerLauncher.Services
         private bool _isEnabled;
         private int _intervalHours;
         private int _warningMinutes;
+        private bool _useFixedTimes;
+        private List<TimeSpan> _fixedTimes = new List<TimeSpan>();
 
         // FIX: Initialize with a default value to satisfy CS8618
         private string _customMessage = "Server will restart in {minutes} minute(s)!";
@@ -34,18 +38,24 @@ namespace IsleServerLauncher.Services
         /// <summary>
         /// Configures and starts the scheduled restart timer
         /// </summary>
-        public void Configure(bool enabled, int intervalHours, int warningMinutes, string customMessage = "Server will restart in {minutes} minute(s)!")
+        public void Configure(bool enabled, int intervalHours, int warningMinutes, string customMessage = "Server will restart in {minutes} minute(s)!", bool useFixedTimes = false, string fixedTimes = "")
         {
             _isEnabled = enabled;
             _intervalHours = Math.Max(1, Math.Min(intervalHours, 24));
             _warningMinutes = Math.Max(1, Math.Min(warningMinutes, 60));
             _customMessage = string.IsNullOrWhiteSpace(customMessage) ? "Server will restart in {minutes} minute(s)!" : customMessage;
+            _useFixedTimes = useFixedTimes;
+            _fixedTimes = ParseFixedTimes(fixedTimes);
 
             Stop();
 
-            if (_isEnabled && intervalHours > 0)
+            if (_isEnabled && (_useFixedTimes ? _fixedTimes.Count > 0 : intervalHours > 0))
             {
                 Start();
+            }
+            else if (_isEnabled && _useFixedTimes && _fixedTimes.Count == 0)
+            {
+                _logger.Warning("Scheduled restart enabled with fixed times, but no valid times were provided.");
             }
         }
 
@@ -56,13 +66,19 @@ namespace IsleServerLauncher.Services
         {
             _cancellationTokenSource = new CancellationTokenSource();
 
-            TimeSpan interval = TimeSpan.FromHours(_intervalHours);
-            _nextRestartTime = DateTime.Now.Add(interval);
+            ScheduleNextRestart(DateTime.Now);
 
-            _logger.Info($"Scheduled restart enabled: Every {_intervalHours} hours with {_warningMinutes} minute warning");
+            if (_useFixedTimes)
+            {
+                _logger.Info($"Scheduled restart enabled: Fixed times ({string.Join(", ", _fixedTimes.Select(t => t.ToString(@"hh\:mm")))}) with {_warningMinutes} minute warning");
+            }
+            else
+            {
+                _logger.Info($"Scheduled restart enabled: Every {_intervalHours} hours with {_warningMinutes} minute warning");
+            }
             _logger.Info($"Next restart scheduled for: {_nextRestartTime:yyyy-MM-dd HH:mm:ss}");
 
-            RestartScheduled?.Invoke(this, interval);
+            RestartScheduled?.Invoke(this, _nextRestartTime - DateTime.Now);
 
             // Set up timer to check every minute
             _restartTimer = new System.Threading.Timer(CheckRestartTime, null, TimeSpan.Zero, TimeSpan.FromMinutes(1));
@@ -91,13 +107,12 @@ namespace IsleServerLauncher.Services
         /// </summary>
         public void ResetTimer()
         {
-            if (_isEnabled && _intervalHours > 0)
+            if (_isEnabled && (_useFixedTimes ? _fixedTimes.Count > 0 : _intervalHours > 0))
             {
-                TimeSpan interval = TimeSpan.FromHours(_intervalHours);
-                _nextRestartTime = DateTime.Now.Add(interval);
+                ScheduleNextRestart(DateTime.Now);
 
                 _logger.Info($"Restart timer reset. Next restart: {_nextRestartTime:yyyy-MM-dd HH:mm:ss}");
-                RestartScheduled?.Invoke(this, interval);
+                RestartScheduled?.Invoke(this, _nextRestartTime - DateTime.Now);
             }
         }
 
@@ -147,6 +162,53 @@ namespace IsleServerLauncher.Services
                 // Schedule next restart
                 ResetTimer();
             }
+        }
+
+        private void ScheduleNextRestart(DateTime now)
+        {
+            if (_useFixedTimes && _fixedTimes.Count > 0)
+            {
+                _nextRestartTime = GetNextFixedRestartTime(now, _fixedTimes);
+            }
+            else
+            {
+                _nextRestartTime = now.Add(TimeSpan.FromHours(_intervalHours));
+            }
+        }
+
+        private static DateTime GetNextFixedRestartTime(DateTime now, List<TimeSpan> times)
+        {
+            var today = now.Date;
+            foreach (var t in times.OrderBy(t => t))
+            {
+                var candidate = today.Add(t);
+                if (candidate > now)
+                {
+                    return candidate;
+                }
+            }
+            // Next day, first time
+            return today.AddDays(1).Add(times.OrderBy(t => t).First());
+        }
+
+        private static List<TimeSpan> ParseFixedTimes(string raw)
+        {
+            var results = new List<TimeSpan>();
+            if (string.IsNullOrWhiteSpace(raw)) return results;
+
+            var parts = raw.Split(new[] { ',', ';', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var part in parts)
+            {
+                var trimmed = part.Trim();
+                if (TimeSpan.TryParse(trimmed, out var ts))
+                {
+                    if (ts >= TimeSpan.Zero && ts < TimeSpan.FromDays(1))
+                    {
+                        results.Add(ts);
+                    }
+                }
+            }
+            return results.Distinct().OrderBy(t => t).ToList();
         }
     }
 }
