@@ -55,6 +55,7 @@ namespace IsleServerLauncher
                     chkEnableCrashDetection, chkAutoRestart, cmbMaxRestartAttempts,
                     chkScheduledRestartEnabled, cmbRestartInterval, cmbWarningMinutes,
                     txtRestartMessage, chkRestartScriptEnabled, txtRestartScriptPath, txtRestartScriptDelaySeconds,
+                    chkUseFixedRestartTimes, txtFixedRestartTimes,
                     chkEnableDiscordWebhook, txtDiscordWebhookUrl, txtDiscordInvite,
                     txtModLoaderPath, txtModDllPath, txtModConfigDir,
                     rdoInjectBuiltIn, rdoInjectBat, chkAutoInjectAfterRestart, txtAutoInjectDelaySeconds,
@@ -89,7 +90,9 @@ namespace IsleServerLauncher
                     config.ScheduledRestartEnabled,
                     config.RestartIntervalHours,
                     config.RestartWarningMinutes,
-                    config.RestartMessage);
+                    config.RestartMessage,
+                    config.UseFixedRestartTimes,
+                    config.FixedRestartTimes);
 
                 UpdateMaintenanceTimers();
 
