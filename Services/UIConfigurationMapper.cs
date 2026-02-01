@@ -38,6 +38,7 @@ namespace IsleServerLauncher.Services
             CheckBox chkEnableCrashDetection, CheckBox chkAutoRestart, ComboBox cmbMaxRestartAttempts,
             CheckBox chkScheduledRestartEnabled, ComboBox cmbRestartInterval, ComboBox cmbWarningMinutes,
             TextBox txtRestartMessage, CheckBox chkRestartScriptEnabled, TextBox txtRestartScriptPath, TextBox txtRestartScriptDelaySeconds,
+            CheckBox chkUseFixedRestartTimes, TextBox txtFixedRestartTimes,
             CheckBox chkEnableDiscordWebhook, TextBox txtDiscordWebhookUrl, TextBox txtDiscordInvite,
             TextBox txtModLoaderPath, TextBox txtModDllPath, TextBox txtModConfigDir,
             RadioButton rdoInjectBuiltIn, RadioButton rdoInjectBat, CheckBox chkAutoInjectAfterRestart, TextBox txtAutoInjectDelaySeconds,
@@ -134,26 +135,23 @@ namespace IsleServerLauncher.Services
                 chkAutoRestart.IsChecked = config.AutoRestart;
                 cmbMaxRestartAttempts.SelectedIndex = config.MaxRestartAttempts switch
                 {
-                    1 => 0,
-                    2 => 1,
-                    3 => 2,
-                    5 => 3,
-                    10 => 4,
-                    _ => 2
+                    1 => 0,   // Index 0 = "1" attempt
+                    3 => 1,   // Index 1 = "3" attempts
+                    5 => 2,   // Index 2 = "5" attempts
+                    10 => 3,  // Index 3 = "10" attempts
+                    _ => 1    // Default to index 1 (3 attempts)
                 };
 
                 chkScheduledRestartEnabled.IsChecked = config.ScheduledRestartEnabled;
                 cmbRestartInterval.SelectedIndex = config.RestartIntervalHours switch
                 {
-                    1 => 0,
-                    2 => 1,
-                    3 => 2,
-                    4 => 3,
-                    6 => 4,
-                    8 => 5,
-                    12 => 6,
-                    24 => 7,
-                    _ => 4
+                    1 => 0,   // Index 0 = "1" hour
+                    2 => 1,   // Index 1 = "2" hours
+                    4 => 2,   // Index 2 = "4" hours
+                    6 => 3,   // Index 3 = "6" hours
+                    12 => 4,  // Index 4 = "12" hours
+                    24 => 5,  // Index 5 = "24" hours
+                    _ => 3    // Default to 6 hours (index 3)
                 };
 
                 cmbWarningMinutes.SelectedIndex = config.RestartWarningMinutes switch
@@ -170,6 +168,8 @@ namespace IsleServerLauncher.Services
                 chkRestartScriptEnabled.IsChecked = config.RestartScriptEnabled;
                 txtRestartScriptPath.Text = config.RestartScriptPath;
                 txtRestartScriptDelaySeconds.Text = config.RestartScriptDelaySeconds.ToString();
+                chkUseFixedRestartTimes.IsChecked = config.UseFixedRestartTimes;
+                txtFixedRestartTimes.Text = config.FixedRestartTimes;
                 chkEnableDiscordWebhook.IsChecked = config.EnableDiscordWebhook;
                 txtDiscordWebhookUrl.Text = config.DiscordWebhookUrl;
                 txtDiscordInvite.Text = config.DiscordInvite;
@@ -285,6 +285,7 @@ namespace IsleServerLauncher.Services
             CheckBox chkEnableCrashDetection, CheckBox chkAutoRestart, ComboBox cmbMaxRestartAttempts,
             CheckBox chkScheduledRestartEnabled, ComboBox cmbRestartInterval, ComboBox cmbWarningMinutes,
             TextBox txtRestartMessage, CheckBox chkRestartScriptEnabled, TextBox txtRestartScriptPath, TextBox txtRestartScriptDelaySeconds,
+            CheckBox chkUseFixedRestartTimes, TextBox txtFixedRestartTimes,
             CheckBox chkEnableDiscordWebhook, TextBox txtDiscordWebhookUrl, TextBox txtDiscordInvite,
             TextBox txtModLoaderPath, TextBox txtModDllPath, TextBox txtModConfigDir,
             RadioButton rdoInjectBuiltIn, RadioButton rdoInjectBat, CheckBox chkAutoInjectAfterRestart, TextBox txtAutoInjectDelaySeconds,
@@ -375,27 +376,24 @@ namespace IsleServerLauncher.Services
 
                 MaxRestartAttempts = cmbMaxRestartAttempts.SelectedIndex switch
                 {
-                    0 => 1,
-                    1 => 2,
-                    2 => 3,
-                    3 => 5,
-                    4 => 10,
-                    _ => 3
+                    0 => 1,   // Index 0 = "1" attempt
+                    1 => 3,   // Index 1 = "3" attempts
+                    2 => 5,   // Index 2 = "5" attempts
+                    3 => 10,  // Index 3 = "10" attempts
+                    _ => 3    // Default to 3 attempts
                 },
 
                 ScheduledRestartEnabled = chkScheduledRestartEnabled.IsChecked.GetValueOrDefault(),
 
                 RestartIntervalHours = cmbRestartInterval.SelectedIndex switch
                 {
-                    0 => 1,
-                    1 => 2,
-                    2 => 3,
-                    3 => 4,
-                    4 => 6,
-                    5 => 8,
-                    6 => 12,
-                    7 => 24,
-                    _ => 6
+                    0 => 1,   // Index 0 = "1" hour
+                    1 => 2,   // Index 1 = "2" hours
+                    2 => 4,   // Index 2 = "4" hours
+                    3 => 6,   // Index 3 = "6" hours
+                    4 => 12,  // Index 4 = "12" hours
+                    5 => 24,  // Index 5 = "24" hours
+                    _ => 6    // Default to 6 hours
                 },
 
                 RestartWarningMinutes = cmbWarningMinutes.SelectedIndex switch
@@ -412,6 +410,8 @@ namespace IsleServerLauncher.Services
                 RestartScriptEnabled = chkRestartScriptEnabled.IsChecked.GetValueOrDefault(),
                 RestartScriptPath = txtRestartScriptPath.Text ?? "",
                 RestartScriptDelaySeconds = int.TryParse(txtRestartScriptDelaySeconds.Text, out int restartDelay) ? restartDelay : 0,
+                UseFixedRestartTimes = chkUseFixedRestartTimes.IsChecked.GetValueOrDefault(),
+                FixedRestartTimes = txtFixedRestartTimes.Text ?? "",
                 EnableDiscordWebhook = chkEnableDiscordWebhook.IsChecked.GetValueOrDefault(),
                 DiscordWebhookUrl = txtDiscordWebhookUrl.Text ?? "",
                 DiscordInvite = txtDiscordInvite.Text ?? "",
