@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -91,7 +91,6 @@ namespace IsleServerLauncher
         public MainWindow()
         {
             InitializeComponent();
-            InitializeDirtyTracking();
 
             _serverFolder = System.IO.Path.Combine(_baseFolder, "TheIsleServerFiles");
             string logFolder = System.IO.Path.Combine(_serverFolder, "Logs");
@@ -136,6 +135,9 @@ namespace IsleServerLauncher
 
                 // Load Configuration (This now handles Theme loading)
                 LoadConfiguration();
+
+                InitializeDirtyTracking();
+                InitializeFixedRestartTimePicker();
 
                 _serverManager.CheckInitialState();
 
@@ -250,6 +252,7 @@ namespace IsleServerLauncher
                 chkEnableCrashDetection, chkAutoRestart, cmbMaxRestartAttempts,
                 chkScheduledRestartEnabled, cmbRestartInterval, cmbWarningMinutes,
                 txtRestartMessage, chkRestartScriptEnabled, txtRestartScriptPath, txtRestartScriptDelaySeconds,
+                chkUseFixedRestartTimes, txtFixedRestartTimes,
                 chkEnableDiscordWebhook, txtDiscordWebhookUrl, txtDiscordInvite,
                 txtModLoaderPath, txtModDllPath, txtModConfigDir,
                 rdoInjectBuiltIn, rdoInjectBat, chkAutoInjectAfterRestart, txtAutoInjectDelaySeconds,
@@ -329,6 +332,7 @@ namespace IsleServerLauncher
                     chkValidateFiles, chkDisableStreaming, cmbPriority, chkUseAllCores, pnlCpuCores,
                     chkEnableCrashDetection, chkAutoRestart, cmbMaxRestartAttempts,
                     chkScheduledRestartEnabled, cmbRestartInterval, cmbWarningMinutes, txtRestartMessage, chkRestartScriptEnabled, txtRestartScriptPath, txtRestartScriptDelaySeconds,
+                    chkUseFixedRestartTimes, txtFixedRestartTimes,
                     chkEnableDiscordWebhook, txtDiscordWebhookUrl, txtDiscordInvite,
                     txtModLoaderPath, txtModDllPath, txtModConfigDir,
                     rdoInjectBuiltIn, rdoInjectBat, chkAutoInjectAfterRestart, txtAutoInjectDelaySeconds,
@@ -355,6 +359,7 @@ namespace IsleServerLauncher
                     chkEnableLogTheIsleAntiCheatVerbose);
 
                 _isLoadingConfig = false;
+                SyncFixedRestartTimesToList();
 
                 // Apply Theme from Configuration
                 _currentTheme = config.Theme ?? "Light";
@@ -423,7 +428,9 @@ namespace IsleServerLauncher
                     config.ScheduledRestartEnabled,
                     config.RestartIntervalHours,
                     config.RestartWarningMinutes,
-                    config.RestartMessage);
+                    config.RestartMessage,
+                    config.UseFixedRestartTimes,
+                    config.FixedRestartTimes);
 
                 UpdateMaintenanceTimers();
 
@@ -556,6 +563,8 @@ namespace IsleServerLauncher
             sb.Append(config.RestartIntervalHours).Append('|');
             sb.Append(config.RestartWarningMinutes).Append('|');
             sb.Append(config.RestartMessage).Append('|');
+            sb.Append(config.UseFixedRestartTimes).Append('|');
+            sb.Append(config.FixedRestartTimes).Append('|');
             sb.Append(config.RestartScriptPath).Append('|');
             sb.Append(config.RestartScriptDelaySeconds).Append('|');
             sb.Append(config.RestartScriptEnabled).Append('|');
@@ -733,7 +742,94 @@ namespace IsleServerLauncher
             if (!InputValidator.IsValidServerName(txtServerName.Text, out string? nameError)) result.AddError($"Server Name: {nameError}");
             if (!InputValidator.IsValidPort(txtGamePort.Text, out _)) result.AddError("Game Port: Must be 1024-65535");
             if (!InputValidator.IsValidPort(txtRconPort.Text, out _)) result.AddError("RCON Port: Must be 1024-65535");
+            if (chkUseFixedRestartTimes.IsChecked == true)
+            {
+                var times = (txtFixedRestartTimes.Text ?? string.Empty)
+                    .Split(new[] { ',', ';', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(t => t.Trim())
+                    .Where(t => !string.IsNullOrWhiteSpace(t))
+                    .ToList();
+
+                if (times.Count == 0 || times.Any(t => !TimeSpan.TryParse(t, out _)))
+                {
+                    result.AddError("Fixed Restart Times: Use HH:mm format, e.g., 05:00, 15:00, 01:00");
+                }
+            }
             return result;
+        }
+
+        private void InitializeFixedRestartTimePicker()
+        {
+            cmbFixedRestartTime.Items.Clear();
+            for (int hour = 0; hour < 24; hour++)
+            {
+                for (int minute = 0; minute < 60; minute += 30)
+                {
+                    var time = new TimeSpan(hour, minute, 0);
+                    cmbFixedRestartTime.Items.Add(time.ToString(@"hh\:mm"));
+                }
+            }
+            if (cmbFixedRestartTime.Items.Count > 0)
+            {
+                cmbFixedRestartTime.SelectedIndex = 0;
+            }
+        }
+
+        private void SyncFixedRestartTimesToList()
+        {
+            if (lstFixedRestartTimes == null) return;
+
+            lstFixedRestartTimes.Items.Clear();
+            var times = ParseFixedTimes(txtFixedRestartTimes.Text);
+            foreach (var time in times)
+            {
+                lstFixedRestartTimes.Items.Add(time);
+            }
+        }
+
+        private void UpdateFixedRestartTimesText()
+        {
+            var times = lstFixedRestartTimes.Items.Cast<string>()
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(t => t)
+                .ToList();
+
+            txtFixedRestartTimes.Text = string.Join(", ", times);
+        }
+
+        private static List<string> ParseFixedTimes(string? raw)
+        {
+            var results = new List<string>();
+            if (string.IsNullOrWhiteSpace(raw)) return results;
+
+            var parts = raw.Split(new[] { ',', ';', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var part in parts)
+            {
+                var trimmed = part.Trim();
+                if (TimeSpan.TryParse(trimmed, out var ts))
+                {
+                    results.Add(ts.ToString(@"hh\:mm"));
+                }
+            }
+            return results.Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(t => t).ToList();
+        }
+
+        private void btnAddFixedRestartTime_Click(object sender, RoutedEventArgs e)
+        {
+            if (cmbFixedRestartTime.SelectedItem is not string time) return;
+            if (lstFixedRestartTimes.Items.Cast<string>().Any(t => string.Equals(t, time, StringComparison.OrdinalIgnoreCase)))
+            {
+                return;
+            }
+            lstFixedRestartTimes.Items.Add(time);
+            UpdateFixedRestartTimesText();
+        }
+
+        private void btnRemoveFixedRestartTime_Click(object sender, RoutedEventArgs e)
+        {
+            if (lstFixedRestartTimes.SelectedItem is not string time) return;
+            lstFixedRestartTimes.Items.Remove(time);
+            UpdateFixedRestartTimesText();
         }
 
         private string GetSelectedCpuCores()
