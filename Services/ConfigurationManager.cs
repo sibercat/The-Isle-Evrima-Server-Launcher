@@ -93,6 +93,8 @@ namespace IsleServerLauncher.Services
         public int RestartIntervalHours { get; set; } = 6;
         public int RestartWarningMinutes { get; set; } = 15;
         public string RestartMessage { get; set; } = "Server will restart in {minutes} minute(s)!";
+        public bool UseFixedRestartTimes { get; set; } = false;
+        public string FixedRestartTimes { get; set; } = "";
         public string RestartScriptPath { get; set; } = "";
         public int RestartScriptDelaySeconds { get; set; } = 0;
         public bool RestartScriptEnabled { get; set; } = false;
@@ -335,6 +337,8 @@ namespace IsleServerLauncher.Services
                     config.RestartIntervalHours = int.TryParse(GetConfigValue(settings, "RestartIntervalHours") ?? "6", out int intervalHours) ? intervalHours : 6;
                     config.RestartWarningMinutes = int.TryParse(GetConfigValue(settings, "RestartWarningMinutes") ?? "15", out int warningMinutes) ? warningMinutes : 15;
                     config.RestartMessage = GetConfigValue(settings, "RestartMessage") ?? "Server will restart in {minutes} minute(s)!";
+                    config.UseFixedRestartTimes = GetBoolValue(settings, "UseFixedRestartTimes");
+                    config.FixedRestartTimes = GetConfigValue(settings, "FixedRestartTimes") ?? "";
                     config.RestartScriptPath = GetConfigValue(settings, "RestartScriptPath") ?? "";
                     config.RestartScriptDelaySeconds = int.TryParse(GetConfigValue(settings, "RestartScriptDelaySeconds") ?? "0", out int scriptDelay) ? scriptDelay : 0;
                     config.RestartScriptEnabled = GetBoolValue(settings, "RestartScriptEnabled");
@@ -733,6 +737,8 @@ namespace IsleServerLauncher.Services
                 settings.AppendLine($"RestartIntervalHours={config.RestartIntervalHours}");
                 settings.AppendLine($"RestartWarningMinutes={config.RestartWarningMinutes}");
                 settings.AppendLine($"RestartMessage={config.RestartMessage}");
+                settings.AppendLine($"UseFixedRestartTimes={config.UseFixedRestartTimes.ToString().ToLower()}");
+                settings.AppendLine($"FixedRestartTimes={config.FixedRestartTimes}");
                 settings.AppendLine($"RestartScriptPath={config.RestartScriptPath}");
                 settings.AppendLine($"RestartScriptDelaySeconds={config.RestartScriptDelaySeconds}");
                 settings.AppendLine($"RestartScriptEnabled={config.RestartScriptEnabled.ToString().ToLower()}");
