@@ -21,7 +21,7 @@
                 <ColumnDefinition />
                 <ColumnDefinition Width="20" />
             </Grid.ColumnDefinitions>
-            <Border x:Name="Border" 
+            <Border x:Name="Border"
                     Grid.ColumnSpan="2"
                     CornerRadius="0"
                     Background="{DynamicResource InputBackgroundBrush}"
@@ -31,7 +31,7 @@
             <Border Grid.Column="1" Background="Transparent" Margin="1"  Padding="0,0,0,0">
                 <Path x:Name="Arrow"
                       Fill="{DynamicResource SecondaryTextBrush}"
-                      VerticalAlignment="Center" 
+                      VerticalAlignment="Center"
                       HorizontalAlignment="Center"
                       Data="M 0 0 L 4 4 L 8 0 Z"/>
             </Border>
@@ -43,6 +43,12 @@
             </Trigger>
             <Trigger Property="IsChecked" Value="true">
                 <Setter TargetName="Border" Property="Background" Value="{DynamicResource ButtonBackgroundBrush}" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="false">
+                <Setter TargetName="Border" Property="Background" Value="{DynamicResource InputBackgroundBrush}" />
+                <Setter TargetName="Border" Property="Opacity" Value="0.5" />
+                <Setter TargetName="Arrow" Property="Fill" Value="{DynamicResource SecondaryTextBrush}" />
+                <Setter TargetName="Arrow" Property="Opacity" Value="0.5" />
             </Trigger>
         </ControlTemplate.Triggers>
     </ControlTemplate>
@@ -105,30 +111,31 @@
             <Setter.Value>
                 <ControlTemplate TargetType="ComboBox">
                     <Grid>
-                        <ToggleButton Name="ToggleButton" 
-                                      Template="{StaticResource ComboBoxToggleButton}" 
-                                      Grid.Column="2" 
+                        <ToggleButton Name="ToggleButton"
+                                      Template="{StaticResource ComboBoxToggleButton}"
+                                      Grid.Column="2"
                                       Focusable="false"
                                       IsChecked="{Binding Path=IsDropDownOpen,Mode=TwoWay,RelativeSource={RelativeSource TemplatedParent}}"
                                       ClickMode="Press"/>
 
                         <ContentPresenter Name="ContentSite"
-                                          IsHitTestVisible="False" 
+                                          IsHitTestVisible="False"
                                           Margin="6,3,23,3"
                                           VerticalAlignment="Center"
-                                          HorizontalAlignment="Left" 
+                                          HorizontalAlignment="Left"
                                           Content="{TemplateBinding SelectionBoxItem}"
                                           ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
-                                          ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"/>
+                                          ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                          TextElement.Foreground="{TemplateBinding Foreground}"/>
 
                         <Popup Name="Popup"
                                Placement="Bottom"
                                IsOpen="{TemplateBinding IsDropDownOpen}"
-                               AllowsTransparency="True" 
+                               AllowsTransparency="True"
                                Focusable="False"
                                PopupAnimation="Slide">
                             <Grid Name="DropDown"
-                                  SnapsToDevicePixels="True"                
+                                  SnapsToDevicePixels="True"
                                   MinWidth="{TemplateBinding ActualWidth}"
                                   MaxHeight="{TemplateBinding MaxDropDownHeight}">
                                 <Border x:Name="DropDownBorder"
@@ -141,6 +148,12 @@
                             </Grid>
                         </Popup>
                     </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsEnabled" Value="false">
+                            <Setter Property="Foreground" Value="{DynamicResource SecondaryTextBrush}"/>
+                            <Setter TargetName="ContentSite" Property="Opacity" Value="0.5"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
@@ -192,6 +205,11 @@
         <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
         <Setter Property="Foreground" Value="{DynamicResource GroupBoxHeaderBrush}"/>
         <Setter Property="Margin" Value="0,5,0,5"/>
+        <Style.Triggers>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.4"/>
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
     <Style TargetType="Menu">
@@ -209,6 +227,11 @@
         <Setter Property="Background" Value="{DynamicResource InputBackgroundBrush}"/>
         <Setter Property="Foreground" Value="{DynamicResource InputTextBrush}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+        <Style.Triggers>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.5"/>
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
     <Style TargetType="CheckBox">
