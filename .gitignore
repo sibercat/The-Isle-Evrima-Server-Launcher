@@ -1,0 +1,22 @@
+# Build output
+bin/
+obj/
+publish/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# Rider
+.idea/
+
+# Claude Code
+.claude/
+
+# OS
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
