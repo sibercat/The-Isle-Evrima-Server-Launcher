@@ -2,7 +2,7 @@
 
 A modern, feature-rich dedicated server manager for **The Isle: Evrima**, built with **C# WPF** and **.NET 10**. This launcher simplifies the complex process of setting up, configuring, and maintaining an Evrima server by providing a unified graphical interface for all administrative tasks.
 
-![Dashboard](https://raw.githubusercontent.com/sibercat/IsleServerLauncher/refs/heads/main/docs/Dashboard.webp)
+![Dashboard](https://raw.githubusercontent.com/sibercat/The-Isle-Evrima-Server-Launcher/refs/heads/main/docs/Dashboard.webp)
 
 ## ✨ Key Features
 Executable can be found in [Releases](https://github.com/sibercat/IsleServerLauncher/releases)
@@ -37,8 +37,8 @@ Executable can be found in [Releases](https://github.com/sibercat/IsleServerLaun
 
 ### 🧩 Mods
 - **Mod Manager (Lightweight):** Manage mod loader/dll paths and config folder.
-- **Injection Modes:** Built-in injector or StartServerWithMod.bat (advanced).
-- **Post-Restart Auto-Inject:** Automatically inject after scheduled restarts with delay.
+- **Injection Modes:** Built-in injector (auto-injects on every server start) or StartServerWithMod.bat (advanced).
+- **Post-Restart Auto-Inject:** Bat method can be configured to automatically run after scheduled restarts with delay.
 
 ### 🖼️ UI/UX
 - **Modern Interface:** Clean WPF design with Light and Dark mode support.
