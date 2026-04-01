@@ -68,6 +68,7 @@ namespace IsleServerLauncher.Services
 
         public event EventHandler<ServerState>? StateChanged;
         public event EventHandler<string>? CrashDetected;
+        public event EventHandler? AutoRestarted;
 
         public ServerState CurrentState { get; private set; }
 
@@ -709,6 +710,8 @@ namespace IsleServerLauncher.Services
 
                         SetState(ServerState.Running);
                         _logger.Info("Auto-restart process launched. Waiting for map load...");
+
+                        AutoRestarted?.Invoke(this, EventArgs.Empty);
 
                         int attempt = _currentRestartAttempts;
                         _ = Task.Run(() => MonitorServerRecoveryAsync(attempt));

@@ -118,6 +118,7 @@ namespace IsleServerLauncher
                 // Subscribe to events
                 _serverManager.StateChanged += OnServerStateChanged;
                 _serverManager.CrashDetected += OnServerCrashed;
+                _serverManager.AutoRestarted += OnServerAutoRestarted;
 
                 _scheduledRestartService.RestartScheduled += OnRestartScheduled;
                 _scheduledRestartService.RestartTriggered += async (s, e) =>
@@ -854,6 +855,23 @@ namespace IsleServerLauncher
             Dispatcher.InvokeAsync(() => {
                 _logger.Warning("Server crash event received");
                 MessageBox.Show($"{crashMessage}\n\nCheck logs.", "Server Crashed", MessageBoxButton.OK, MessageBoxImage.Warning);
+            });
+        }
+
+        private void OnServerAutoRestarted(object? sender, EventArgs e)
+        {
+            var config = GetCurrentConfiguration();
+            if (config.UseModBatInjection) return;
+
+            _ = Task.Run(async () =>
+            {
+                int delaySeconds = Math.Max(0, config.AutoInjectDelaySeconds);
+                if (delaySeconds > 0)
+                {
+                    _logger.Info($"Delaying auto-inject after crash restart by {delaySeconds} seconds.");
+                    await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+                }
+                Dispatcher.Invoke(() => TryInjectModWithLoader(showUi: false));
             });
         }
 
