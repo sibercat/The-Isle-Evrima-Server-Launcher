@@ -59,10 +59,10 @@ namespace IsleServerLauncher
             }
         }
 
-        internal void chkAutoBroadcast_Checked(object sender, RoutedEventArgs e) => SaveSettings(false);
-        internal void chkAutoBroadcast_Unchecked(object sender, RoutedEventArgs e) { StopAutoBroadcast(); SaveSettings(false); }
-        internal void txtAutoBroadcastInterval_TextChanged(object sender, TextChangedEventArgs e) => SaveSettings(false);
-        internal void txtAutoBroadcastMessage_TextChanged(object sender, TextChangedEventArgs e) => SaveSettings(false);
+        internal void chkAutoBroadcast_Checked(object sender, RoutedEventArgs e) { if (_logger == null) return; SaveSettings(false); }
+        internal void chkAutoBroadcast_Unchecked(object sender, RoutedEventArgs e) { if (_logger == null) return; StopAutoBroadcast(); SaveSettings(false); }
+        internal void txtAutoBroadcastInterval_TextChanged(object sender, TextChangedEventArgs e) { if (_logger == null) return; SaveSettings(false); }
+        internal void txtAutoBroadcastMessage_TextChanged(object sender, TextChangedEventArgs e) { if (_logger == null) return; SaveSettings(false); }
 
         private async void btnSendAnnouncement_Click(object sender, RoutedEventArgs e)
         {
