@@ -239,7 +239,7 @@ namespace IsleServerLauncher
 
         public ServerConfiguration GetCurrentConfiguration()
         {
-            return _uiMapper.BuildConfigurationFromUI(
+            var config = _uiMapper.BuildConfigurationFromUI(
                 txtServerName, txtMaxPlayers, txtServerPass,
                 txtRconPass, txtRconPort, chkEnableRcon, chkWhitelist,
                 txtGamePort, txtQueuePort, chkQueueEnabled, txtCustomArgs,
@@ -282,6 +282,11 @@ namespace IsleServerLauncher
                 chkEnableLogTheIsleKillDataVerbose, chkEnableLogTheIsleCommandDataVerbose,
                 chkEnableLogTheIsleAntiCheatVerbose,
                 _currentTheme); // Pass current theme to ensure config is saved correctly
+
+            config.AutoBroadcastEnabled = chkAutoBroadcast.IsChecked.GetValueOrDefault();
+            config.AutoBroadcastMessage = txtAutoBroadcastMessage.Text ?? "";
+            config.AutoBroadcastIntervalMinutes = int.TryParse(txtAutoBroadcastInterval.Text, out int broadcastInterval) ? broadcastInterval : 15;
+            return config;
         }
 
         private void InitializeDinoList()
@@ -361,6 +366,10 @@ namespace IsleServerLauncher
                     chkEnableLogTheIsleJoinDataVerbose, chkEnableLogTheIsleChatDataVerbose,
                     chkEnableLogTheIsleKillDataVerbose, chkEnableLogTheIsleCommandDataVerbose,
                     chkEnableLogTheIsleAntiCheatVerbose);
+
+                chkAutoBroadcast.IsChecked = config.AutoBroadcastEnabled;
+                txtAutoBroadcastMessage.Text = config.AutoBroadcastMessage;
+                txtAutoBroadcastInterval.Text = config.AutoBroadcastIntervalMinutes.ToString();
 
                 _isLoadingConfig = false;
                 SyncFixedRestartTimesToList();

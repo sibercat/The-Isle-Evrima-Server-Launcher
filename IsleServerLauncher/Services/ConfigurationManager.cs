@@ -112,6 +112,11 @@ namespace IsleServerLauncher.Services
         public bool AutoInjectAfterRestart { get; set; } = false;
         public int AutoInjectDelaySeconds { get; set; } = 5;
 
+        // Auto Broadcast
+        public bool AutoBroadcastEnabled { get; set; } = false;
+        public string AutoBroadcastMessage { get; set; } = "";
+        public int AutoBroadcastIntervalMinutes { get; set; } = 15;
+
         // Automatic Backups
         public bool AutoBackupEnabled { get; set; } = false;
         public int BackupIntervalHours { get; set; } = 6;
@@ -356,6 +361,13 @@ namespace IsleServerLauncher.Services
                     config.AutoInjectDelaySeconds = int.TryParse(GetConfigValue(settings, "AutoInjectDelaySeconds") ?? "5", out int autoInjectDelay)
                         ? autoInjectDelay
                         : 5;
+
+                    // Auto Broadcast
+                    config.AutoBroadcastEnabled = GetBoolValue(settings, "AutoBroadcastEnabled");
+                    config.AutoBroadcastMessage = GetConfigValue(settings, "AutoBroadcastMessage") ?? "";
+                    config.AutoBroadcastIntervalMinutes = int.TryParse(GetConfigValue(settings, "AutoBroadcastIntervalMinutes") ?? "15", out int broadcastInterval)
+                        ? broadcastInterval
+                        : 15;
 
                     // Automatic Backups
                     config.AutoBackupEnabled = GetBoolValue(settings, "AutoBackupEnabled");
@@ -754,6 +766,11 @@ namespace IsleServerLauncher.Services
                 settings.AppendLine($"UseModBatInjection={config.UseModBatInjection.ToString().ToLower()}");
                 settings.AppendLine($"AutoInjectAfterRestart={config.AutoInjectAfterRestart.ToString().ToLower()}");
                 settings.AppendLine($"AutoInjectDelaySeconds={config.AutoInjectDelaySeconds}");
+
+                // Auto Broadcast
+                settings.AppendLine($"AutoBroadcastEnabled={config.AutoBroadcastEnabled.ToString().ToLower()}");
+                settings.AppendLine($"AutoBroadcastMessage={config.AutoBroadcastMessage}");
+                settings.AppendLine($"AutoBroadcastIntervalMinutes={config.AutoBroadcastIntervalMinutes}");
 
                 // Automatic Backups
                 settings.AppendLine($"AutoBackupEnabled={config.AutoBackupEnabled.ToString().ToLower()}");

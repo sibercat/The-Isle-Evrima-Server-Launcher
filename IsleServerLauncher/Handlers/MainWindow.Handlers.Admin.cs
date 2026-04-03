@@ -8,6 +8,7 @@ using System.Windows.Documents;
 using System.Windows.Media;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Windows.Threading;
 
 namespace IsleServerLauncher
 {
@@ -17,6 +18,51 @@ namespace IsleServerLauncher
     {
         // ADMINISTRATOR TAB HANDLERS
         // ==========================================
+
+        private DispatcherTimer? _autoBroadcastTimer;
+
+        internal void StartAutoBroadcast()
+        {
+            StopAutoBroadcast();
+            var config = GetCurrentConfiguration();
+            if (!config.AutoBroadcastEnabled || string.IsNullOrWhiteSpace(config.AutoBroadcastMessage)) return;
+            int minutes = Math.Max(1, config.AutoBroadcastIntervalMinutes);
+            _autoBroadcastTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(minutes) };
+            _autoBroadcastTimer.Tick += AutoBroadcastTimer_Tick;
+            _autoBroadcastTimer.Start();
+            _logger.Info($"Auto-broadcast started: every {minutes} min.");
+        }
+
+        internal void StopAutoBroadcast()
+        {
+            if (_autoBroadcastTimer == null) return;
+            _autoBroadcastTimer.Stop();
+            _autoBroadcastTimer.Tick -= AutoBroadcastTimer_Tick;
+            _autoBroadcastTimer = null;
+            _logger.Info("Auto-broadcast stopped.");
+        }
+
+        private async void AutoBroadcastTimer_Tick(object? sender, EventArgs e)
+        {
+            var config = GetCurrentConfiguration();
+            if (string.IsNullOrWhiteSpace(config.AutoBroadcastMessage)) return;
+            if (_serverManager.CurrentState != ServerState.Running) return;
+            try
+            {
+                using var rcon = new RconClient("127.0.0.1", int.Parse(config.RconPort), config.RconPassword, _logger);
+                await rcon.SendAnnounceAsync(config.AutoBroadcastMessage);
+                _logger.Info($"Auto-broadcast sent: {config.AutoBroadcastMessage}");
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Auto-broadcast failed: {ex.Message}");
+            }
+        }
+
+        internal void chkAutoBroadcast_Checked(object sender, RoutedEventArgs e) => SaveSettings(false);
+        internal void chkAutoBroadcast_Unchecked(object sender, RoutedEventArgs e) { StopAutoBroadcast(); SaveSettings(false); }
+        internal void txtAutoBroadcastInterval_TextChanged(object sender, TextChangedEventArgs e) => SaveSettings(false);
+        internal void txtAutoBroadcastMessage_TextChanged(object sender, TextChangedEventArgs e) => SaveSettings(false);
 
         private async void btnSendAnnouncement_Click(object sender, RoutedEventArgs e)
         {

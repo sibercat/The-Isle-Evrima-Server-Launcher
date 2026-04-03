@@ -558,8 +558,28 @@
                                         </GroupBox.ToolTip>
                                         <StackPanel>
                                             <TextBox x:Name="txtAnnouncementMessage" Height="50" AcceptsReturn="True" TextWrapping="Wrap" Padding="5"/>
-                                            <Button x:Name="btnSendAnnouncement" Content="📢 Send Announcement" Height="35" Margin="0,10,0,0" Click="btnSendAnnouncement_Click" 
+                                            <Button x:Name="btnSendAnnouncement" Content="📢 Send Announcement" Height="35" Margin="0,10,0,0" Click="btnSendAnnouncement_Click"
                                                     Style="{StaticResource ModernButtonStyle}" Background="#9B59B6" Foreground="White"/>
+                                            <Separator Margin="0,12,0,8"/>
+                                            <CheckBox x:Name="chkAutoBroadcast" Content="Auto-broadcast every" VerticalAlignment="Center"
+                                                      Checked="chkAutoBroadcast_Checked" Unchecked="chkAutoBroadcast_Unchecked"/>
+                                            <Grid Margin="0,6,0,0" IsEnabled="{Binding ElementName=chkAutoBroadcast, Path=IsChecked}">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="55"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="Interval (min):" VerticalAlignment="Center" Margin="0,0,8,0"
+                                                           Foreground="{DynamicResource PrimaryTextBrush}"/>
+                                                <TextBox x:Name="txtAutoBroadcastInterval" Grid.Column="1" Height="26"
+                                                         VerticalContentAlignment="Center" Text="15"
+                                                         TextChanged="txtAutoBroadcastInterval_TextChanged"/>
+                                            </Grid>
+                                            <TextBox x:Name="txtAutoBroadcastMessage" Height="50" AcceptsReturn="True" TextWrapping="Wrap"
+                                                     Padding="5" Margin="0,6,0,0"
+                                                     IsEnabled="{Binding ElementName=chkAutoBroadcast, Path=IsChecked}"
+                                                     ToolTip="Message sent automatically at the configured interval."
+                                                     TextChanged="txtAutoBroadcastMessage_TextChanged"/>
                                         </StackPanel>
                                     </GroupBox>
 

@@ -169,6 +169,7 @@ namespace IsleServerLauncher
             }
 
             UpdateMaintenanceTimers();
+            StartAutoBroadcast();
 
             _serverManager.ResetRestartCounter();
 
@@ -181,6 +182,7 @@ namespace IsleServerLauncher
             _logger.Info("Stopping server");
 
             await _serverManager.StopServerAsync(_rconClient);
+            StopAutoBroadcast();
 
             if (_serverManager.CurrentState != ServerState.Stopped)
                 _serverManager.SetState(ServerState.Stopped);
