@@ -5,7 +5,7 @@ A modern, feature-rich dedicated server manager for **The Isle: Evrima**, built 
 ![Dashboard](https://raw.githubusercontent.com/sibercat/The-Isle-Evrima-Server-Launcher/refs/heads/main/docs/Dashboard.webp)
 
 ## ✨ Key Features
-Executable can be found in [Releases](https://github.com/sibercat/IsleServerLauncher/releases)
+Executable can be found here [Releases](https://github.com/sibercat/IsleServerLauncher/releases)
 
 ### 🚀 Server Management
 - **Automated Install/Update:** Built-in SteamCMD integration to install, update, and validate server files.
