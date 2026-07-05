@@ -157,6 +157,9 @@ namespace IsleServerLauncher
                 _nextRestartUpdateTimer.Start();
 
                 _logger.Info("Launcher initialized successfully");
+
+                // Fire-and-forget: silent unless an update is actually found
+                _ = CheckForUpdatesOnStartupAsync();
             }
             catch (Exception ex)
             {
@@ -329,6 +332,7 @@ namespace IsleServerLauncher
             config.AutoBroadcastEnabled = chkAutoBroadcast.IsChecked.GetValueOrDefault();
             config.AutoBroadcastMessage = txtAutoBroadcastMessage.Text ?? "";
             config.AutoBroadcastIntervalMinutes = int.TryParse(txtAutoBroadcastInterval.Text, out int broadcastInterval) ? broadcastInterval : 15;
+            config.CheckUpdatesOnStartup = mnuCheckUpdatesOnStartup.IsChecked;
             return config;
         }
 
@@ -413,6 +417,7 @@ namespace IsleServerLauncher
                 chkAutoBroadcast.IsChecked = config.AutoBroadcastEnabled;
                 txtAutoBroadcastMessage.Text = config.AutoBroadcastMessage;
                 txtAutoBroadcastInterval.Text = config.AutoBroadcastIntervalMinutes.ToString();
+                mnuCheckUpdatesOnStartup.IsChecked = config.CheckUpdatesOnStartup;
 
                 _isLoadingConfig = false;
                 SyncFixedRestartTimesToList();
@@ -676,6 +681,7 @@ namespace IsleServerLauncher
             sb.Append(config.EnableLogTheIsleCommandDataVerbose).Append('|');
             sb.Append(config.EnableLogTheIsleAntiCheatVerbose).Append('|');
             sb.Append(config.Theme).Append('|');
+            sb.Append(config.CheckUpdatesOnStartup).Append('|');
 
             sb.Append(string.Join(",", config.AdminSteamIds)).Append('|');
             sb.Append(string.Join(",", config.WhitelistIds)).Append('|');

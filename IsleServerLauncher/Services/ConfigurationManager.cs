@@ -171,6 +171,7 @@ namespace IsleServerLauncher.Services
 
         // Application Settings
         public string Theme { get; set; } = "Light";
+        public bool CheckUpdatesOnStartup { get; set; } = true;
 
         // Lists
         public List<string> AdminSteamIds { get; set; } = new List<string>();
@@ -332,6 +333,9 @@ namespace IsleServerLauncher.Services
 
                     // Theme
                     config.Theme = GetConfigValue(settings, "Theme") ?? "Light";
+
+                    // Updates
+                    config.CheckUpdatesOnStartup = GetBoolValue(settings, "CheckUpdatesOnStartup", defaultValue: true);
 
                     // Crash Detection
                     config.EnableCrashDetection = GetBoolValue(settings, "EnableCrashDetection", defaultValue: true);
@@ -740,6 +744,9 @@ namespace IsleServerLauncher.Services
 
                 // Theme
                 settings.AppendLine($"Theme={config.Theme}");
+
+                // Updates
+                settings.AppendLine($"CheckUpdatesOnStartup={config.CheckUpdatesOnStartup.ToString().ToLower()}");
 
                 // Crash Detection
                 settings.AppendLine($"EnableCrashDetection={config.EnableCrashDetection.ToString().ToLower()}");

@@ -96,17 +96,23 @@ namespace IsleServerLauncher
             }
         }
 
-        private async Task CheckForUpdatesAsync()
+        internal void mnuCheckUpdatesOnStartup_Click(object sender, RoutedEventArgs e)
+        {
+            if (_isLoadingConfig) return;
+            SaveSettings(true);
+        }
+
+        private async Task<(Version? latestVersion, string latestTag, string latestUrl)> FetchLatestReleaseInfoAsync()
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, GitHubLatestReleaseApi);
             request.Headers.UserAgent.ParseAdd("IsleServerLauncher/1.0");
             request.Headers.Accept.ParseAdd("application/vnd.github+json");
 
-            using var response = await _httpClient.SendAsync(request);
+            using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(15));
+            using var response = await _httpClient.SendAsync(request, cts.Token);
             if (!response.IsSuccessStatusCode)
             {
-                MessageBox.Show($"Update check failed: {response.StatusCode}", "Update Check", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
+                throw new InvalidOperationException($"Update check failed: {response.StatusCode}");
             }
 
             string json = await response.Content.ReadAsStringAsync();
@@ -114,8 +120,66 @@ namespace IsleServerLauncher
             string latestTag = doc.RootElement.TryGetProperty("tag_name", out var tagEl) ? (tagEl.GetString() ?? "") : "";
             string latestUrl = doc.RootElement.TryGetProperty("html_url", out var urlEl) ? (urlEl.GetString() ?? GitHubReleasesPage) : GitHubReleasesPage;
 
+            return (ParseVersion(latestTag), latestTag, latestUrl);
+        }
+
+        /// <summary>
+        /// Silent startup check: only surfaces anything when a new version exists,
+        /// and only once per released version. Failures just go to the log.
+        /// </summary>
+        private async Task CheckForUpdatesOnStartupAsync()
+        {
+            try
+            {
+                // Let the window finish loading before doing network work
+                await Task.Delay(TimeSpan.FromSeconds(5));
+
+                if (!mnuCheckUpdatesOnStartup.IsChecked) return;
+
+                var (latestVersion, _, latestUrl) = await FetchLatestReleaseInfoAsync();
+                var currentVersion = GetCurrentVersion();
+                if (currentVersion == null || latestVersion == null || latestVersion <= currentVersion)
+                {
+                    _logger.Info($"Startup update check: up to date (current v{currentVersion}, latest v{latestVersion}).");
+                    return;
+                }
+
+                // Only notify once per released version
+                string noticeFile = Path.Combine(_serverFolder, "last_update_notice.txt");
+                try
+                {
+                    if (File.Exists(noticeFile) &&
+                        string.Equals(File.ReadAllText(noticeFile).Trim(), latestVersion.ToString(), StringComparison.OrdinalIgnoreCase))
+                    {
+                        return;
+                    }
+                    File.WriteAllText(noticeFile, latestVersion.ToString());
+                }
+                catch { /* notice tracking is best-effort; worst case the dialog shows again */ }
+
+                _logger.Info($"Startup update check: new version v{latestVersion} is available.");
+
+                var result = MessageBox.Show(
+                    $"A new version of the launcher is available.\n\nCurrent: v{currentVersion}\nLatest: v{latestVersion}\n\nOpen the download page?\n\n(You won't be asked again for this version. You can always use Help > Check for Updates.)",
+                    "Update Available",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Information);
+                if (result == MessageBoxResult.Yes)
+                {
+                    Process.Start(new ProcessStartInfo { FileName = latestUrl, UseShellExecute = true });
+                }
+            }
+            catch (Exception ex)
+            {
+                // Silent by design - never bother the user at startup over a failed check
+                _logger.Info($"Startup update check skipped: {ex.Message}");
+            }
+        }
+
+        private async Task CheckForUpdatesAsync()
+        {
+            var (latestVersion, latestTag, latestUrl) = await FetchLatestReleaseInfoAsync();
             var currentVersion = GetCurrentVersion();
-            var latestVersion = ParseVersion(latestTag);
 
             if (currentVersion != null && latestVersion != null)
             {
