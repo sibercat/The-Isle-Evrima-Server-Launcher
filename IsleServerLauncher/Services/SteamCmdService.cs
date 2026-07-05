@@ -148,7 +148,8 @@ namespace IsleServerLauncher.Services
 CD /D ""{_serverFolder}""
 TITLE SteamCMD - The Isle {operationType}
 start /B /WAIT /AFFINITY {affinityHex} steamcmd.exe +force_install_dir ""{_serverFolder}"" +login anonymous +app_update {SteamAppId} -beta evrima {validateFlag} +quit
-IF !ERRORLEVEL! NEQ 0 ( TIMEOUT /T 5 /NOBREAK >NUL & start /B /WAIT /AFFINITY {affinityHex} steamcmd.exe +force_install_dir ""{_serverFolder}"" +login anonymous +app_update {SteamAppId} -beta evrima {validateFlag} +quit )
+REM Retry once if the first run failed (SteamCMD self-updates and exits non-zero on first run)
+IF ERRORLEVEL 1 ( TIMEOUT /T 5 /NOBREAK >NUL & start /B /WAIT /AFFINITY {affinityHex} steamcmd.exe +force_install_dir ""{_serverFolder}"" +login anonymous +app_update {SteamAppId} -beta evrima {validateFlag} +quit )
 TIMEOUT /T {(validate ? 3 : 5)}";
 
                 await File.WriteAllTextAsync(batchFilePath, batchContent);

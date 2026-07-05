@@ -428,8 +428,19 @@ namespace IsleServerLauncher.Services
 
                 lock (_processLock)
                 {
-                    _serverProcess?.Dispose();
-                    _serverProcess = null;
+                    if (_serverProcess != null)
+                    {
+                        // Unsubscribe before disposing so a late Exited event from the
+                        // wrapper process isn't misreported as a crash after we set Stopped
+                        try
+                        {
+                            _serverProcess.EnableRaisingEvents = false;
+                            _serverProcess.Exited -= OnProcessExited;
+                        }
+                        catch { }
+                        _serverProcess.Dispose();
+                        _serverProcess = null;
+                    }
                 }
 
                 // Final verify to ensure state is clean
@@ -548,12 +559,13 @@ namespace IsleServerLauncher.Services
 
             try
             {
-                // Wait for log file to be created
-                while (!File.Exists(logPath))
+                // Wait for a FRESH log file - the old log still contains "Load map complete"
+                // from the previous session, which would falsely confirm recovery
+                while (!File.Exists(logPath) || File.GetLastWriteTime(logPath) < startTime)
                 {
                     if (DateTime.Now - startTime > timeout)
                     {
-                        _logger.Warning("Recovery Monitor: Log file was not created within timeout.");
+                        _logger.Warning("Recovery Monitor: Fresh log file was not created within timeout.");
                         return;
                     }
                     await Task.Delay(1000);
@@ -608,7 +620,7 @@ namespace IsleServerLauncher.Services
 
         private void OnProcessExited(object? sender, EventArgs e)
         {
-            if (CurrentState == ServerState.Stopping)
+            if (CurrentState == ServerState.Stopping || CurrentState == ServerState.Stopped)
             {
                 _logger.Debug("Process exited during managed shutdown - ignoring");
                 return;

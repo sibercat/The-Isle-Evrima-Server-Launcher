@@ -228,7 +228,7 @@ namespace IsleServerLauncher
 
             stackPanel.Children.Add(new TextBlock
             {
-                Text = $"Version: {System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.0.5"}",
+                Text = $"Version: {System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "?"}",
                 Margin = new Thickness(0, 0, 0, 10)
             });
 

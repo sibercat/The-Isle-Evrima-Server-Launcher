@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
@@ -104,7 +105,7 @@ namespace IsleServerLauncher
             });
         }
 
-        internal void btnInjectMod_Click(object sender, RoutedEventArgs e)
+        internal async void btnInjectMod_Click(object sender, RoutedEventArgs e)
         {
             if (rdoInjectBat.IsChecked == true)
             {
@@ -112,7 +113,16 @@ namespace IsleServerLauncher
                 return;
             }
 
-            TryInjectModWithLoader(showUi: true);
+            var button = sender as Button;
+            if (button != null) button.IsEnabled = false;
+            try
+            {
+                await TryInjectModWithLoaderAsync(showUi: true);
+            }
+            finally
+            {
+                if (button != null) button.IsEnabled = true;
+            }
         }
 
         private bool TryRunModBatInjection(bool showUi)
@@ -154,7 +164,7 @@ namespace IsleServerLauncher
             }
         }
 
-        private bool TryInjectModWithLoader(bool showUi)
+        private async Task<bool> TryInjectModWithLoaderAsync(bool showUi)
         {
             string loaderPath = txtModLoaderPath.Text?.Trim() ?? "";
             string dllPath = txtModDllPath.Text?.Trim() ?? "";
@@ -215,9 +225,30 @@ namespace IsleServerLauncher
                         return false;
                     }
 
-                    string output = proc.StandardOutput.ReadToEnd();
-                    string error = proc.StandardError.ReadToEnd();
-                    proc.WaitForExit(15000);
+                    // Read both streams concurrently - reading them one after the other
+                    // can deadlock if the loader fills the other pipe's buffer
+                    var outputTask = proc.StandardOutput.ReadToEndAsync();
+                    var errorTask = proc.StandardError.ReadToEndAsync();
+
+                    using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(15));
+                    try
+                    {
+                        await proc.WaitForExitAsync(cts.Token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        try { proc.Kill(entireProcessTree: true); } catch { }
+                        AppendModLog("Injection timed out after 15 seconds.");
+                        if (showUi)
+                        {
+                            MessageBox.Show("Injection timed out after 15 seconds.", "Injection Failed",
+                                MessageBoxButton.OK, MessageBoxImage.Error);
+                        }
+                        return false;
+                    }
+
+                    string output = await outputTask;
+                    string error = await errorTask;
 
                     if (!string.IsNullOrWhiteSpace(output))
                         AppendModLog(output.Trim());

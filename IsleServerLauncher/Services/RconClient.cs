@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace IsleServerLauncher.Services
@@ -196,9 +197,6 @@ namespace IsleServerLauncher.Services
 
                     using (var stream = client.GetStream())
                     {
-                        stream.ReadTimeout = 5000;
-                        stream.WriteTimeout = 5000;
-
                         // 2. Authenticate
                         if (!await AuthenticateAsync(stream))
                         {
@@ -218,7 +216,7 @@ namespace IsleServerLauncher.Services
 
                         payload.Add(0x00); // Null Terminator
 
-                        await stream.WriteAsync(payload.ToArray(), 0, payload.Count);
+                        await WriteWithTimeoutAsync(stream, payload.ToArray());
 
                         // 4. Read Response
                         return await ReadResponseAsync(stream);
@@ -239,17 +237,42 @@ namespace IsleServerLauncher.Services
             payload.AddRange(Encoding.UTF8.GetBytes(_password));
             payload.Add(0x00);
 
-            await stream.WriteAsync(payload.ToArray(), 0, payload.Count);
+            await WriteWithTimeoutAsync(stream, payload.ToArray());
 
             string response = await ReadResponseAsync(stream);
             return response.Contains("Accepted", StringComparison.OrdinalIgnoreCase) ||
                    response.Contains("Logged in", StringComparison.OrdinalIgnoreCase);
         }
 
+        private static async Task WriteWithTimeoutAsync(NetworkStream stream, byte[] payload)
+        {
+            // NetworkStream.WriteTimeout only applies to synchronous writes
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            try
+            {
+                await stream.WriteAsync(payload.AsMemory(), cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                throw new TimeoutException("RCON write timed out");
+            }
+        }
+
         private async Task<string> ReadResponseAsync(NetworkStream stream)
         {
+            // NetworkStream.ReadTimeout only applies to synchronous reads, so enforce
+            // a real timeout here - otherwise a silent server hangs the caller forever
             var buffer = new byte[8192];
-            int bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length);
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            int bytesRead;
+            try
+            {
+                bytesRead = await stream.ReadAsync(buffer.AsMemory(), cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                throw new TimeoutException("RCON read timed out");
+            }
 
             if (bytesRead == 0) return string.Empty;
 

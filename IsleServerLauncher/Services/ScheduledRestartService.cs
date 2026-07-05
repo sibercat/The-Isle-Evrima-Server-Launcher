@@ -40,12 +40,28 @@ namespace IsleServerLauncher.Services
         /// </summary>
         public void Configure(bool enabled, int intervalHours, int warningMinutes, string customMessage = "Server will restart in {minutes} minute(s)!", bool useFixedTimes = false, string fixedTimes = "")
         {
-            _isEnabled = enabled;
-            _intervalHours = Math.Max(1, Math.Min(intervalHours, 24));
-            _warningMinutes = Math.Max(1, Math.Min(warningMinutes, 60));
+            int clampedInterval = Math.Max(1, Math.Min(intervalHours, 24));
+            int clampedWarning = Math.Max(1, Math.Min(warningMinutes, 60));
+            var parsedTimes = ParseFixedTimes(fixedTimes);
+
+            // Message changes don't need a timer restart
             _customMessage = string.IsNullOrWhiteSpace(customMessage) ? "Server will restart in {minutes} minute(s)!" : customMessage;
+
+            // If the schedule itself is unchanged, keep the running countdown -
+            // otherwise every settings save would reset the restart timer
+            bool scheduleUnchanged = _isEnabled == enabled
+                && _intervalHours == clampedInterval
+                && _warningMinutes == clampedWarning
+                && _useFixedTimes == useFixedTimes
+                && _fixedTimes.SequenceEqual(parsedTimes)
+                && (!enabled || _restartTimer != null);
+            if (scheduleUnchanged) return;
+
+            _isEnabled = enabled;
+            _intervalHours = clampedInterval;
+            _warningMinutes = clampedWarning;
             _useFixedTimes = useFixedTimes;
-            _fixedTimes = ParseFixedTimes(fixedTimes);
+            _fixedTimes = parsedTimes;
 
             Stop();
 

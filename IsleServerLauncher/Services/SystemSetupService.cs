@@ -57,12 +57,16 @@ namespace IsleServerLauncher.Services
 Write-Host '>>> STARTING SERVER SETUP...' -ForegroundColor Cyan
 
 Write-Host '1. Configuring Windows Firewall...' -ForegroundColor Yellow
-New-NetFirewallRule -DisplayName 'The Isle - Game Port' -Direction Inbound -LocalPort 7777 -Protocol UDP -Action Allow -Force -ErrorAction SilentlyContinue
-New-NetFirewallRule -DisplayName 'The Isle - RCON Port' -Direction Inbound -LocalPort 8888 -Protocol TCP -Action Allow -Force -ErrorAction SilentlyContinue
+if (-not (Get-NetFirewallRule -DisplayName 'The Isle - Game Port' -ErrorAction SilentlyContinue)) {
+    New-NetFirewallRule -DisplayName 'The Isle - Game Port' -Direction Inbound -LocalPort 7777 -Protocol UDP -Action Allow
+}
+if (-not (Get-NetFirewallRule -DisplayName 'The Isle - RCON Port' -ErrorAction SilentlyContinue)) {
+    New-NetFirewallRule -DisplayName 'The Isle - RCON Port' -Direction Inbound -LocalPort 8888 -Protocol TCP -Action Allow
+}
 
 Write-Host '2. Installing Visual C++ Runtime...' -ForegroundColor Yellow
 $vcUrl = 'https://aka.ms/vs/17/release/vc_redist.x64.exe'
-$vcFile = '$env:TEMP\vc_redist.x64.exe'
+$vcFile = ""$env:TEMP\vc_redist.x64.exe""
 Invoke-WebRequest -Uri $vcUrl -OutFile $vcFile -UseBasicParsing
 Start-Process -FilePath $vcFile -ArgumentList '/install', '/passive', '/norestart' -Wait
 Remove-Item $vcFile -ErrorAction SilentlyContinue

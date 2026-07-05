@@ -92,7 +92,7 @@ namespace IsleServerLauncher
         {
             InitializeComponent();
 
-            var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.0.5";
+            var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "?";
             Title = $"The Isle Evrima Server Launcher (v{version})";
 
             _serverFolder = System.IO.Path.Combine(_baseFolder, "TheIsleServerFiles");
@@ -123,6 +123,11 @@ namespace IsleServerLauncher
                 _scheduledRestartService.RestartScheduled += OnRestartScheduled;
                 _scheduledRestartService.RestartTriggered += async (s, e) =>
                 {
+                    if (_serverManager.CurrentState != ServerState.Running)
+                    {
+                        _logger.Info("Scheduled restart skipped: server is not running.");
+                        return;
+                    }
                     _scheduledRestartScriptPending = true;
                     await Dispatcher.InvokeAsync(async () => await GracefulShutdownAsync(restartAfter: true));
                 };
@@ -159,6 +164,44 @@ namespace IsleServerLauncher
                 MessageBox.Show($"Critical error during initialization:\n{ex.Message}", "Startup Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 throw;
             }
+        }
+
+        // ==========================================
+        // WINDOW LIFECYCLE
+        // ==========================================
+        protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+        {
+            if (_isDirty)
+            {
+                var result = MessageBox.Show(
+                    "You have unsaved changes. Save before exiting?",
+                    "Unsaved Changes",
+                    MessageBoxButton.YesNoCancel,
+                    MessageBoxImage.Warning);
+
+                if (result == MessageBoxResult.Cancel)
+                {
+                    e.Cancel = true;
+                    return;
+                }
+                if (result == MessageBoxResult.Yes && !SaveSettings(true))
+                {
+                    e.Cancel = true;
+                    return;
+                }
+            }
+
+            _nextRestartUpdateTimer?.Stop();
+            _chatMonitorTimer?.Stop();
+            _wipeCorpsesTimer?.Stop();
+            _rconSaveTimer?.Stop();
+            StopAutoBroadcast();
+            _chatWebhookBatchTimer?.Dispose();
+            _scheduledRestartService.Stop();
+            _backupService.Stop();
+            _logger.Info("=== Launcher Closing ===");
+
+            base.OnClosing(e);
         }
 
         // ==========================================
@@ -661,9 +704,17 @@ namespace IsleServerLauncher
             _rconSaveTimer.Tick += RconSaveTimer_Tick;
         }
 
+        private (bool wipeOn, int wipeInterval, int wipeDelay, bool saveOn, int saveInterval)? _maintenanceTimerSettings;
+
         private void UpdateMaintenanceTimers()
         {
             var config = GetCurrentConfiguration();
+
+            // Skip if nothing changed, so saving unrelated settings doesn't reset the countdowns
+            var settings = (config.AutoWipeCorpsesEnabled, config.WipeCorpsesIntervalMinutes, config.WipeCorpsesDelayMinutes,
+                config.AutoRconSaveEnabled, config.RconSaveIntervalMinutes);
+            if (_maintenanceTimerSettings == settings) return;
+            _maintenanceTimerSettings = settings;
 
             // Wipe Corpses
             _wipeCorpsesTimer?.Stop();
@@ -869,18 +920,26 @@ namespace IsleServerLauncher
 
         private void OnServerAutoRestarted(object? sender, EventArgs e)
         {
-            var config = GetCurrentConfiguration();
-            if (config.UseModBatInjection) return;
-
-            _ = Task.Run(async () =>
+            // Raised from a background thread - all UI access must go through the dispatcher.
+            _ = Dispatcher.InvokeAsync(async () =>
             {
-                int delaySeconds = Math.Max(0, config.AutoInjectDelaySeconds);
-                if (delaySeconds > 0)
+                try
                 {
-                    _logger.Info($"Delaying auto-inject after crash restart by {delaySeconds} seconds.");
-                    await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+                    var config = GetCurrentConfiguration();
+                    if (config.UseModBatInjection) return;
+
+                    int delaySeconds = Math.Max(0, config.AutoInjectDelaySeconds);
+                    if (delaySeconds > 0)
+                    {
+                        _logger.Info($"Delaying auto-inject after crash restart by {delaySeconds} seconds.");
+                        await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+                    }
+                    await TryInjectModWithLoaderAsync(showUi: false);
                 }
-                Dispatcher.Invoke(() => TryInjectModWithLoader(showUi: false));
+                catch (Exception ex)
+                {
+                    _logger.Error($"Auto-inject after crash restart failed: {ex.Message}", ex);
+                }
             });
         }
 
@@ -907,7 +966,7 @@ namespace IsleServerLauncher
             {
                 TimeSpan remaining = _scheduledRestartService.GetTimeUntilRestart();
                 txtNextRestart.Text = remaining > TimeSpan.Zero
-                    ? $"Next restart: {_scheduledRestartService.NextRestartTime:HH:mm:ss} ({remaining.Hours}h {remaining.Minutes}m)"
+                    ? $"Next restart: {_scheduledRestartService.NextRestartTime:HH:mm:ss} ({(int)remaining.TotalHours}h {remaining.Minutes}m)"
                     : "Next restart: Calculating...";
             }
             else txtNextRestart.Text = "Next restart: Not scheduled";
@@ -937,7 +996,7 @@ namespace IsleServerLauncher
             {
                 TimeSpan remaining = _backupService.GetTimeUntilBackup();
                 txtNextBackup.Text = remaining > TimeSpan.Zero
-                    ? $"Next backup: {_backupService.NextBackupTime:HH:mm:ss} ({remaining.Hours}h {remaining.Minutes}m)"
+                    ? $"Next backup: {_backupService.NextBackupTime:HH:mm:ss} ({(int)remaining.TotalHours}h {remaining.Minutes}m)"
                     : "Next backup: Calculating...";
             }
             else

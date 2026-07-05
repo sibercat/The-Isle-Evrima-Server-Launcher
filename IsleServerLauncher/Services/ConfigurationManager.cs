@@ -328,6 +328,7 @@ namespace IsleServerLauncher.Services
                     config.DisableStreaming = GetBoolValue(settings, "DisableStreaming");
                     config.ProcessPriority = GetConfigValue(settings, "ProcessPriority") ?? "Normal";
                     config.CpuAffinity = GetConfigValue(settings, "CpuAffinity") ?? "";
+                    config.GamePort = GetConfigValue(settings, "GamePort") ?? "7777";
 
                     // Theme
                     config.Theme = GetConfigValue(settings, "Theme") ?? "Light";
@@ -545,7 +546,7 @@ namespace IsleServerLauncher.Services
                 // Security
                 bool hasPass = !string.IsNullOrWhiteSpace(config.ServerPassword);
                 UpdateIniValue(lines, section, "bServerPassword", hasPass.ToString().ToLower());
-                if (hasPass) UpdateIniValue(lines, section, "ServerPassword", config.ServerPassword);
+                UpdateIniValue(lines, section, "ServerPassword", hasPass ? config.ServerPassword : null);
 
                 UpdateIniValue(lines, section, "bRconEnabled", config.RconEnabled.ToString().ToLower());
                 UpdateIniValue(lines, section, "RconPassword", config.RconPassword);
@@ -735,6 +736,7 @@ namespace IsleServerLauncher.Services
                 settings.AppendLine($"CustomArgs={config.CustomArgs}");
                 settings.AppendLine($"ProcessPriority={config.ProcessPriority}");
                 settings.AppendLine($"CpuAffinity={config.CpuAffinity}");
+                settings.AppendLine($"GamePort={config.GamePort}");
 
                 // Theme
                 settings.AppendLine($"Theme={config.Theme}");

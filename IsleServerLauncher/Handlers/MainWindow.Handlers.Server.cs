@@ -160,7 +160,7 @@ namespace IsleServerLauncher
                     _logger.Info($"Delaying auto-inject by {autoDelaySeconds} seconds.");
                     await Task.Delay(TimeSpan.FromSeconds(autoDelaySeconds));
                 }
-                TryInjectModWithLoader(showUi: false);
+                await TryInjectModWithLoaderAsync(showUi: false);
             }
 
             if (config.ScheduledRestartEnabled)

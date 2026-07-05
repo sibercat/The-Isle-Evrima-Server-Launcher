@@ -59,10 +59,50 @@ namespace IsleServerLauncher
             }
         }
 
-        internal void chkAutoBroadcast_Checked(object sender, RoutedEventArgs e) { if (_logger == null) return; SaveSettings(false); }
-        internal void chkAutoBroadcast_Unchecked(object sender, RoutedEventArgs e) { if (_logger == null) return; StopAutoBroadcast(); SaveSettings(false); }
-        internal void txtAutoBroadcastInterval_TextChanged(object sender, TextChangedEventArgs e) { if (_logger == null) return; SaveSettings(false); }
-        internal void txtAutoBroadcastMessage_TextChanged(object sender, TextChangedEventArgs e) { if (_logger == null) return; SaveSettings(false); }
+        // Debounced auto-save: writing the config files on every keystroke is expensive
+        // and spams "Saved" toasts, so changes are saved silently after typing stops.
+        private DispatcherTimer? _autoBroadcastSaveTimer;
+
+        private void QueueAutoBroadcastSave()
+        {
+            if (_logger == null || _isLoadingConfig) return;
+
+            if (_autoBroadcastSaveTimer == null)
+            {
+                _autoBroadcastSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
+                _autoBroadcastSaveTimer.Tick += (s, e) =>
+                {
+                    _autoBroadcastSaveTimer!.Stop();
+                    if (_isLoadingConfig) return;
+                    if (!ValidateAllInputs().IsValid) return; // don't nag while typing; Save button still reports errors
+                    SaveSettings(true);
+                    if (_serverManager.CurrentState == ServerState.Running)
+                    {
+                        StartAutoBroadcast(); // apply new message/interval immediately
+                    }
+                };
+            }
+
+            _autoBroadcastSaveTimer.Stop();
+            _autoBroadcastSaveTimer.Start();
+        }
+
+        internal void chkAutoBroadcast_Checked(object sender, RoutedEventArgs e)
+        {
+            if (_logger == null || _isLoadingConfig) return;
+            if (_serverManager.CurrentState == ServerState.Running) StartAutoBroadcast();
+            QueueAutoBroadcastSave();
+        }
+
+        internal void chkAutoBroadcast_Unchecked(object sender, RoutedEventArgs e)
+        {
+            if (_logger == null || _isLoadingConfig) return;
+            StopAutoBroadcast();
+            QueueAutoBroadcastSave();
+        }
+
+        internal void txtAutoBroadcastInterval_TextChanged(object sender, TextChangedEventArgs e) => QueueAutoBroadcastSave();
+        internal void txtAutoBroadcastMessage_TextChanged(object sender, TextChangedEventArgs e) => QueueAutoBroadcastSave();
 
         private async void btnSendAnnouncement_Click(object sender, RoutedEventArgs e)
         {

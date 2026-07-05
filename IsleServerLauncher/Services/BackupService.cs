@@ -14,6 +14,7 @@ namespace IsleServerLauncher.Services
         private bool _isEnabled;
         private int _intervalHours;
         private DateTime _nextBackupTime;
+        private int _backupInProgress;
 
         public event EventHandler? BackupCompleted;
         public event EventHandler<string>? BackupFailed;
@@ -34,8 +35,15 @@ namespace IsleServerLauncher.Services
         /// </summary>
         public void ConfigureAutomaticBackups(bool enabled, int intervalHours)
         {
+            int clamped = Math.Max(1, Math.Min(intervalHours, 168)); // 1 hour to 1 week
+
+            // If nothing changed, keep the running countdown - otherwise every
+            // settings save would reset the backup timer
+            if (_isEnabled == enabled && _intervalHours == clamped && (!enabled || _backupTimer != null))
+                return;
+
             _isEnabled = enabled;
-            _intervalHours = Math.Max(1, Math.Min(intervalHours, 168)); // 1 hour to 1 week
+            _intervalHours = clamped;
 
             Stop();
 
@@ -104,8 +112,12 @@ namespace IsleServerLauncher.Services
             if (!_isEnabled) return;
 
             TimeSpan timeUntilBackup = _nextBackupTime - DateTime.Now;
+            if (timeUntilBackup > TimeSpan.Zero) return;
 
-            if (timeUntilBackup <= TimeSpan.Zero)
+            // Don't start a second backup if one from a previous tick is still running
+            if (Interlocked.Exchange(ref _backupInProgress, 1) == 1) return;
+
+            try
             {
                 _logger.Info("=== AUTOMATIC BACKUP TRIGGERED ===");
 
@@ -123,6 +135,10 @@ namespace IsleServerLauncher.Services
 
                 // Schedule next backup
                 ResetTimer();
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _backupInProgress, 0);
             }
         }
 

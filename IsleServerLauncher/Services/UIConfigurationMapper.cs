@@ -130,6 +130,13 @@ namespace IsleServerLauncher.Services
                     foreach (CheckBox cb in pnlCpuCores.Children)
                         cb.IsChecked = cores.Contains(cb.Content.ToString());
                 }
+                else
+                {
+                    // Reset stale per-core selections (e.g. after switching presets)
+                    chkUseAllCores.IsChecked = true;
+                    foreach (CheckBox cb in pnlCpuCores.Children)
+                        cb.IsChecked = true;
+                }
 
                 chkEnableCrashDetection.IsChecked = config.EnableCrashDetection;
                 chkAutoRestart.IsChecked = config.AutoRestart;
