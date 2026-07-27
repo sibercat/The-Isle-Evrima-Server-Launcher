@@ -429,9 +429,18 @@ namespace IsleServerLauncher.Services
                     string customArgs = GetConfigValue(settings, "CustomArgs") ?? "";
                     config.CustomArgs = customArgs.StartsWith("Example:") ? "" : customArgs;
 
+                    // KnownDinos remembers discovered species even while they are unticked,
+                    // so they don't vanish from the list the next time the launcher starts.
+                    string? knownDinos = GetConfigValue(settings, "KnownDinos");
+                    if (!string.IsNullOrWhiteSpace(knownDinos))
+                    {
+                        MergeDiscoveredDinos(config, knownDinos.Split(','), "launcher settings");
+                    }
+
                     string? enabledDinos = GetConfigValue(settings, "EnabledDinos");
                     if (enabledDinos != null)
                     {
+                        MergeDiscoveredDinos(config, enabledDinos.Split(','), "launcher settings");
                         dinosLoadedFromSettings = true;
                         if (!string.IsNullOrWhiteSpace(enabledDinos))
                         {
@@ -453,20 +462,29 @@ namespace IsleServerLauncher.Services
                     }
                 }
 
+                // Adopt any AllowedClasses entry the launcher doesn't ship in its built-in
+                // roster (new Evrima species, hand-edited Game.ini, modded classes). Without
+                // this they'd be dropped from the list and then erased from Game.ini on the
+                // next save. Runs after the settings pass so a brand-new discovery isn't
+                // immediately unticked by EnabledDinos: its presence in Game.ini is a
+                // deliberate signal, so it starts enabled. KnownDinos remembers it from then
+                // on, and the user's tick state is respected afterwards.
+                MergeDiscoveredDinos(config, ExtractAllowedClasses(content), "Game.ini", enabledIfNew: true);
+
                 // Load dinos from Game.ini only if not loaded from settings
                 if (!dinosLoadedFromSettings)
                 {
                     if (content.Contains("AllowedClasses="))
                     {
                         foreach (var dino in config.Dinosaurs) dino.IsEnabled = false;
-                        var matches = Regex.Matches(content, @"AllowedClasses=([a-zA-Z]+)");
-                        foreach (Match m in matches)
+                        var allowed = ExtractAllowedClasses(content);
+                        foreach (var name in allowed)
                         {
                             var item = config.Dinosaurs.FirstOrDefault(d =>
-                                d.Name.Equals(m.Groups[1].Value, StringComparison.OrdinalIgnoreCase));
+                                d.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
                             if (item != null) item.IsEnabled = true;
                         }
-                        _logger.Debug($"Loaded {matches.Count} enabled dinosaurs from Game.ini");
+                        _logger.Debug($"Loaded {allowed.Count} enabled dinosaurs from Game.ini");
                     }
                     else
                     {
@@ -836,6 +854,10 @@ namespace IsleServerLauncher.Services
                 var enabledDinos = config.Dinosaurs.Where(d => d.IsEnabled).Select(d => d.Name);
                 settings.AppendLine($"EnabledDinos={string.Join(",", enabledDinos)}");
 
+                // Every species the launcher knows about, enabled or not, so discovered
+                // ones stay in the list after being unticked
+                settings.AppendLine($"KnownDinos={string.Join(",", config.Dinosaurs.Select(d => d.Name))}");
+
                 File.WriteAllText(_settingsPath, settings.ToString());
                 _logger.Debug("Launcher settings saved successfully");
             }
@@ -979,6 +1001,33 @@ namespace IsleServerLauncher.Services
 
             // Insert new values
             lines.InsertRange(nextSectionIdx, newValues);
+        }
+
+        /// <summary>
+        /// Reads every AllowedClasses value out of Game.ini, in file order.
+        /// </summary>
+        private static List<string> ExtractAllowedClasses(string content)
+        {
+            return Regex.Matches(content, @"^\s*AllowedClasses=([A-Za-z0-9_]+)", RegexOptions.Multiline)
+                .Select(m => m.Groups[1].Value)
+                .ToList();
+        }
+
+        /// <summary>
+        /// Adds species that aren't part of the launcher's built-in roster so they survive
+        /// a load/save round trip instead of being stripped out of Game.ini.
+        /// </summary>
+        private void MergeDiscoveredDinos(ServerConfiguration config, IEnumerable<string> names, string source, bool enabledIfNew = false)
+        {
+            foreach (var raw in names)
+            {
+                var name = raw?.Trim();
+                if (string.IsNullOrWhiteSpace(name)) continue;
+                if (config.Dinosaurs.Any(d => d.Name.Equals(name, StringComparison.OrdinalIgnoreCase))) continue;
+
+                config.Dinosaurs.Add(new DinoOption { Name = name, IsEnabled = enabledIfNew });
+                _logger.Info($"Discovered non-standard playable '{name}' from {source}; preserving it (enabled={enabledIfNew}).");
+            }
         }
 
         private string? GetConfigValue(string content, string key)

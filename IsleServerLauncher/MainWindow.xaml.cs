@@ -78,7 +78,8 @@ namespace IsleServerLauncher
             "Dryosaurus", "Hypsilophodon", "Pachycephalosaurus", "Stegosaurus", "Tenontosaurus",
             "Carnotaurus", "Ceratosaurus", "Deinosuchus", "Diabloceratops", "Omniraptor",
             "Pteranodon", "Troodon", "Beipiaosaurus", "Gallimimus", "Dilophosaurus",
-            "Herrerasaurus", "Maiasaura", "Triceratops", "Allosaurus", "Tyrannosaurus"
+            "Herrerasaurus", "Maiasaura", "Triceratops", "Allosaurus", "Tyrannosaurus",
+            "Kentrosaurus"
         };
 
         private readonly List<string> _allAI = new List<string>
