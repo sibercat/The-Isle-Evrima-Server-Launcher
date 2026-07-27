@@ -168,7 +168,7 @@ namespace IsleServerLauncher
                 _scheduledRestartService.ResetTimer();
             }
 
-            UpdateMaintenanceTimers();
+            UpdateMaintenanceTimers(force: true);
             StartAutoBroadcast();
 
             _serverManager.ResetRestartCounter();

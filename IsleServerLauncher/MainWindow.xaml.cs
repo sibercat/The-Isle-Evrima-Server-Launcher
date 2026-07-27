@@ -174,6 +174,10 @@ namespace IsleServerLauncher
         // ==========================================
         protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
         {
+            // Stop this before the prompt below: MessageBox pumps the dispatcher, so a
+            // pending debounced save could write changes the user is about to decline.
+            _autoBroadcastSaveTimer?.Stop();
+
             if (_isDirty)
             {
                 var result = MessageBox.Show(
@@ -712,14 +716,19 @@ namespace IsleServerLauncher
 
         private (bool wipeOn, int wipeInterval, int wipeDelay, bool saveOn, int saveInterval)? _maintenanceTimerSettings;
 
-        private void UpdateMaintenanceTimers()
+        /// <param name="force">
+        /// Always re-anchor the schedules. Required on server start: the wipe delay is
+        /// measured from server start, and while the server was stopped the ticks were
+        /// no-ops, so a stale due-time would wipe corpses immediately.
+        /// </param>
+        private void UpdateMaintenanceTimers(bool force = false)
         {
             var config = GetCurrentConfiguration();
 
             // Skip if nothing changed, so saving unrelated settings doesn't reset the countdowns
             var settings = (config.AutoWipeCorpsesEnabled, config.WipeCorpsesIntervalMinutes, config.WipeCorpsesDelayMinutes,
                 config.AutoRconSaveEnabled, config.RconSaveIntervalMinutes);
-            if (_maintenanceTimerSettings == settings) return;
+            if (!force && _maintenanceTimerSettings == settings) return;
             _maintenanceTimerSettings = settings;
 
             // Wipe Corpses

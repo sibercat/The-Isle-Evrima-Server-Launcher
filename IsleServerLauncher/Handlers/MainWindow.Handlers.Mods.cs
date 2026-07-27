@@ -238,6 +238,7 @@ namespace IsleServerLauncher
                     catch (OperationCanceledException)
                     {
                         try { proc.Kill(entireProcessTree: true); } catch { }
+                        try { await Task.WhenAll(outputTask, errorTask); } catch { } // observe the stream reads
                         AppendModLog("Injection timed out after 15 seconds.");
                         if (showUi)
                         {
