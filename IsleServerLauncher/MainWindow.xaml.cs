@@ -63,6 +63,7 @@ namespace IsleServerLauncher
             "txtAnnouncementMessage",
             "txtWhitelistId",
             "txtLiveAIDensity",
+            "txtAddDino",
             "chkMonitorGlobal",
             "chkMonitorSpatial",
             "chkMonitorAdmin"
@@ -79,7 +80,7 @@ namespace IsleServerLauncher
             "Carnotaurus", "Ceratosaurus", "Deinosuchus", "Diabloceratops", "Omniraptor",
             "Pteranodon", "Troodon", "Beipiaosaurus", "Gallimimus", "Dilophosaurus",
             "Herrerasaurus", "Maiasaura", "Triceratops", "Allosaurus", "Tyrannosaurus",
-            "Kentrosaurus"
+            "Kentrosaurus", "Austroraptor"
         };
 
         private readonly List<string> _allAI = new List<string>
@@ -345,6 +346,46 @@ namespace IsleServerLauncher
         {
             var list = _allDinos.Select(d => new DinoOption { Name = d, IsEnabled = false }).ToList();
             lstDinos.ItemsSource = list;
+        }
+
+        /// <summary>
+        /// Adds a playable species that isn't in the built-in roster, so a brand new Evrima
+        /// release can be enabled without waiting for a launcher update.
+        /// </summary>
+        internal void AddCustomDino()
+        {
+            string name = (txtAddDino.Text ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(name)) return;
+
+            // Must match what the Game.ini parser accepts, or it would not survive a reload
+            if (!System.Text.RegularExpressions.Regex.IsMatch(name, @"^[A-Za-z0-9_]+$"))
+            {
+                MessageBox.Show(
+                    "Species names can only contain letters, numbers and underscores.\n\nUse the exact class name from Game.ini, for example: Austroraptor",
+                    "Invalid Name", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            if (lstDinos.ItemsSource is not List<DinoOption> dinos)
+            {
+                _logger.Warning("Cannot add species: dinosaur list is not available.");
+                return;
+            }
+
+            if (dinos.Any(d => d.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+            {
+                ShowToast($"{name} is already in the list", true);
+                txtAddDino.Clear();
+                return;
+            }
+
+            dinos.Add(new DinoOption { Name = name, IsEnabled = true });
+            lstDinos.Items.Refresh();
+            txtAddDino.Clear();
+            UpdateDirtyState();
+
+            _logger.Info($"User added custom playable species '{name}'.");
+            ShowToast($"Added {name} - remember to Save");
         }
 
         private void InitializeDisallowedAiList()

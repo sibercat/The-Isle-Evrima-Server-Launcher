@@ -702,6 +702,28 @@
                                             Style="{StaticResource ModernButtonStyle}" />
                                     </StackPanel>
                                 </Grid>
+                                <Grid Margin="0,0,0,10" DockPanel.Dock="Top">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox
+                                        x:Name="txtAddDino"
+                                        Height="28"
+                                        Padding="5,0"
+                                        VerticalContentAlignment="Center"
+                                        KeyDown="txtAddDino_KeyDown"
+                                        Tag="Add a species not listed yet..."
+                                        ToolTip="Add a playable species the launcher doesn't ship with yet, such as one from a brand new Evrima patch. Type the exact class name used in Game.ini (for example: Austroraptor) and press Add." />
+                                    <Button
+                                        Grid.Column="1"
+                                        Width="70"
+                                        Margin="10,0,0,0"
+                                        Click="btnAddDino_Click"
+                                        Content="Add"
+                                        Style="{StaticResource ModernButtonStyle}"
+                                        ToolTip="Add the typed species to the list." />
+                                </Grid>
                                 <ListBox
                                     x:Name="lstDinos"
                                     Height="220"
