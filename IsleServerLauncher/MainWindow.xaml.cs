@@ -354,14 +354,17 @@ namespace IsleServerLauncher
         /// </summary>
         internal void AddCustomDino()
         {
-            string name = (txtAddDino.Text ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(name)) return;
+            string name = txtAddDino.Text.Trim();
+            if (name.Length == 0)
+            {
+                ShowToast("Type a species name first", true);
+                return;
+            }
 
-            // Must match what the Game.ini parser accepts, or it would not survive a reload
-            if (!System.Text.RegularExpressions.Regex.IsMatch(name, @"^[A-Za-z0-9_]+$"))
+            if (!InputValidator.IsValidPlayableClassName(name, out string? error))
             {
                 MessageBox.Show(
-                    "Species names can only contain letters, numbers and underscores.\n\nUse the exact class name from Game.ini, for example: Austroraptor",
+                    $"{error}.\n\nUse the exact class name from Game.ini, for example: Austroraptor",
                     "Invalid Name", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
@@ -380,12 +383,74 @@ namespace IsleServerLauncher
             }
 
             dinos.Add(new DinoOption { Name = name, IsEnabled = true });
-            lstDinos.Items.Refresh();
             txtAddDino.Clear();
+            ClearDinoSearchFilter();
+            lstDinos.Items.Refresh();
             UpdateDirtyState();
 
             _logger.Info($"User added custom playable species '{name}'.");
             ShowToast($"Added {name} - remember to Save");
+        }
+
+        /// <summary>
+        /// Removes a species that was added by hand. Built-in ones are rebuilt from the
+        /// roster on every load, so removing them would only look like it worked.
+        /// </summary>
+        internal void RemoveCustomDino()
+        {
+            if (lstDinos.ItemsSource is not List<DinoOption> dinos) return;
+
+            // The text box is the explicit input for this feature, so honour it first. The
+            // list can hold a selection the user never intended (rows get selected
+            // incidentally, and clicking a row's checkbox toggles rather than selects), and
+            // that would otherwise hijack the button and act on the wrong species.
+            DinoOption? selected;
+            string typed = txtAddDino.Text.Trim();
+            if (typed.Length > 0)
+            {
+                selected = dinos.FirstOrDefault(d => d.Name.Equals(typed, StringComparison.OrdinalIgnoreCase));
+                if (selected == null)
+                {
+                    ShowToast($"{typed} is not in the list", true);
+                    return;
+                }
+            }
+            else
+            {
+                selected = lstDinos.SelectedItem as DinoOption;
+            }
+
+            if (selected == null)
+            {
+                ShowToast("Type a species name, or select one in the list, then press Remove", true);
+                return;
+            }
+
+            if (_allDinos.Any(d => d.Equals(selected.Name, StringComparison.OrdinalIgnoreCase)))
+            {
+                MessageBox.Show(
+                    $"{selected.Name} ships with the launcher and can't be removed.\n\nUntick it instead to disable it on your server.",
+                    "Built-in Species", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            dinos.Remove(selected);
+            txtAddDino.Clear();
+            ClearDinoSearchFilter();
+            lstDinos.Items.Refresh();
+            UpdateDirtyState();
+
+            _logger.Info($"User removed custom playable species '{selected.Name}'.");
+            ShowToast($"Removed {selected.Name} - remember to Save");
+        }
+
+        /// <summary>
+        /// The dino ListBox shares its default view with the search box, so an active filter
+        /// would hide a species that was just added or leave a stale view after a removal.
+        /// </summary>
+        private void ClearDinoSearchFilter()
+        {
+            if (txtDinoSearch.Text.Length > 0) txtDinoSearch.Clear();
         }
 
         private void InitializeDisallowedAiList()

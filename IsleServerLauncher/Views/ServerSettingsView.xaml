@@ -702,6 +702,14 @@
                                             Style="{StaticResource ModernButtonStyle}" />
                                     </StackPanel>
                                 </Grid>
+                                <TextBlock
+                                    Margin="0,0,0,2"
+                                    DockPanel.Dock="Top"
+                                    FontSize="11"
+                                    FontWeight="Normal"
+                                    Foreground="Gray"
+                                    TextWrapping="Wrap"
+                                    Text="Not listed yet? Type a species' Game.ini class name (e.g. Austroraptor) and press Add." />
                                 <Grid Margin="0,0,0,10" DockPanel.Dock="Top">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -709,20 +717,28 @@
                                     </Grid.ColumnDefinitions>
                                     <TextBox
                                         x:Name="txtAddDino"
-                                        Height="28"
-                                        Padding="5,0"
-                                        VerticalContentAlignment="Center"
+                                        MaxLength="64"
                                         KeyDown="txtAddDino_KeyDown"
-                                        Tag="Add a species not listed yet..."
                                         ToolTip="Add a playable species the launcher doesn't ship with yet, such as one from a brand new Evrima patch. Type the exact class name used in Game.ini (for example: Austroraptor) and press Add." />
-                                    <Button
+                                    <StackPanel
                                         Grid.Column="1"
-                                        Width="70"
                                         Margin="10,0,0,0"
-                                        Click="btnAddDino_Click"
-                                        Content="Add"
-                                        Style="{StaticResource ModernButtonStyle}"
-                                        ToolTip="Add the typed species to the list." />
+                                        Orientation="Horizontal">
+                                        <!--  No fixed Width: ModernButtonStyle adds 15px side padding, which clips short labels  -->
+                                        <Button
+                                            MinWidth="60"
+                                            Margin="0,0,5,0"
+                                            Click="btnAddDino_Click"
+                                            Content="Add"
+                                            Style="{StaticResource ModernButtonStyle}"
+                                            ToolTip="Add the typed species to the list." />
+                                        <Button
+                                            MinWidth="60"
+                                            Click="btnRemoveDino_Click"
+                                            Content="Remove"
+                                            Style="{StaticResource ModernButtonStyle}"
+                                            ToolTip="Remove a species you added. Type its name above (or select it in the list) and press Remove. Built-in species can't be removed - untick them instead." />
+                                    </StackPanel>
                                 </Grid>
                                 <ListBox
                                     x:Name="lstDinos"

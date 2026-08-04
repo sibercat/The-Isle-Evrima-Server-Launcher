@@ -11,6 +11,9 @@ namespace IsleServerLauncher.Services
     {
         public string Name { get; set; } = "";
         public bool IsEnabled { get; set; } = true;
+
+        // Keeps list rows readable to screen readers and UI automation
+        public override string ToString() => Name;
     }
 
     public class AiOption
@@ -447,7 +450,12 @@ namespace IsleServerLauncher.Services
                             var enabled = enabledDinos.Split(',');
                             foreach (var dino in config.Dinosaurs)
                             {
-                                dino.IsEnabled = enabled.Contains(dino.Name);
+                                // Case-insensitive and trimmed: the rest of the dino handling compares
+                                // with OrdinalIgnoreCase, and an ordinal match here would silently untick
+                                // a species that was discovered under different casing (e.g. a hand-added
+                                // "austroraptor") once it joins the built-in roster.
+                                dino.IsEnabled = enabled.Any(e =>
+                                    e.Trim().Equals(dino.Name, StringComparison.OrdinalIgnoreCase));
                             }
                             _logger.Debug($"Loaded {enabled.Length} enabled dinosaurs from settings");
                         }
@@ -1008,7 +1016,7 @@ namespace IsleServerLauncher.Services
         /// </summary>
         private static List<string> ExtractAllowedClasses(string content)
         {
-            return Regex.Matches(content, @"^\s*AllowedClasses=([A-Za-z0-9_]+)", RegexOptions.Multiline)
+            return Regex.Matches(content, $@"^\s*AllowedClasses=({InputValidator.PlayableClassNamePattern})", RegexOptions.Multiline)
                 .Select(m => m.Groups[1].Value)
                 .ToList();
         }

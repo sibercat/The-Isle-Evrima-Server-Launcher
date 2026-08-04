@@ -90,6 +90,7 @@ namespace IsleServerLauncher
         private CheckBox chkEnableLogTheIsleAntiCheatVerbose => serverSettingsView.chkEnableLogTheIsleAntiCheatVerbose;
 
         private WpfTextBox txtAddDino => serverSettingsView.txtAddDino;
+        private WpfTextBox txtDinoSearch => serverSettingsView.txtDinoSearch;
         private ListBox lstDinos => serverSettingsView.lstDinos;
         private ListBox lstDisallowedAI => serverSettingsView.lstDisallowedAI;
     }

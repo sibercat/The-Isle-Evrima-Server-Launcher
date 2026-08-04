@@ -60,6 +60,41 @@ namespace IsleServerLauncher.Services
             return true;
         }
 
+        /// <summary>
+        /// Character set for a playable species class name as it appears in Game.ini
+        /// (AllowedClasses=Tyrannosaurus). Shared with the Game.ini parser so a name the
+        /// UI accepts is always a name that survives a reload.
+        /// </summary>
+        public const string PlayableClassNamePattern = "[A-Za-z0-9_]+";
+
+        public const int MaxPlayableClassNameLength = 64;
+
+        public static bool IsValidPlayableClassName(string name, out string? error)
+        {
+            error = null;
+            name = (name ?? "").Trim();
+
+            if (name.Length == 0)
+            {
+                error = "Species name cannot be empty";
+                return false;
+            }
+
+            if (name.Length > MaxPlayableClassNameLength)
+            {
+                error = $"Species name must be {MaxPlayableClassNameLength} characters or less";
+                return false;
+            }
+
+            if (!System.Text.RegularExpressions.Regex.IsMatch(name, $"^{PlayableClassNamePattern}$"))
+            {
+                error = "Species names can only contain letters, numbers and underscores";
+                return false;
+            }
+
+            return true;
+        }
+
         // Numeric range validation
         public static bool IsValidNumber(string text, int min, int max, out int value)
         {
