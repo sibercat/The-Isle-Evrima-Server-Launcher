@@ -185,6 +185,20 @@ namespace IsleServerLauncher.Services
 
     public class ConfigurationManager
     {
+        // UE reads a Config property only from its owning class's section, so these names
+        // decide which keys the game actually sees. Verified against the Dumper-7 SDK:
+        // AdminsSteamIDs / WhitelistIDs / VIPs / AllowedClasses live on ATIGameStateBase,
+        // while DisallowedAIClasses / AIDensity / bSpawnAI live on ATIGameSession.
+        private const string SessionSection = "/Script/TheIsle.TIGameSession";
+        private const string StateSection = "/Script/TheIsle.TIGameStateBase";
+
+        // Same character set the add-species dialog enforces, so a name read back from Game.ini
+        // is one the launcher could also have produced. Length is left to SanitizeIniListEntry:
+        // rejecting an over-long name outright would delete it from Game.ini on the next save.
+        private static readonly Regex LeadingClassName =
+            new Regex("^" + InputValidator.PlayableClassNamePattern, RegexOptions.Compiled);
+        private static readonly Regex LeadingDigits = new Regex(@"^\d+", RegexOptions.Compiled);
+
         private readonly string _serverFolder;
         private readonly string _configPath;
         private readonly string _engineConfigPath;
@@ -287,7 +301,7 @@ namespace IsleServerLauncher.Services
                 // Read only the sections the save path rewrites - the session section where it
                 // belongs, plus the state section older versions wrongly wrote it to.
                 var disallowed = ReadIniValuesInSections(content, "DisallowedAIClasses",
-                        "/Script/TheIsle.TIGameSession", "/Script/TheIsle.TIGameStateBase")
+                        SessionSection, StateSection)
                     .SelectMany(v => v.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
                     .Select(SanitizeIniListEntry)
                     .Where(item => item != null)
@@ -313,28 +327,20 @@ namespace IsleServerLauncher.Services
                     option.IsEnabled = true;
                 }
                 
-                // Admin IDs
-                var adminMatches = Regex.Matches(content, @"^[ \t]*AdminsSteamIDs[ \t]*=[ \t]*(\d+)", RegexOptions.Multiline);
-                foreach (Match m in adminMatches)
-                {
-                    config.AdminSteamIds.Add(m.Groups[1].Value);
-                }
+                // AdminsSteamIDs, WhitelistIDs, VIPs and AllowedClasses are all Config
+                // properties on ATIGameStateBase (verified in the Dumper-7 SDK), so the game
+                // reads them from that section and nowhere else. Scoping the read to it keeps
+                // the launcher honest - a copy in another section is dead weight the game
+                // ignores, and listing it would claim someone is an admin when they are not.
+                // It also keeps removal working: an entry shown in the UI is one the save,
+                // which only ever rewrites this section, can actually delete again.
+                config.AdminSteamIds = ReadIniIdList(content, "AdminsSteamIDs", StateSection);
                 _logger.Debug($"Loaded {config.AdminSteamIds.Count} admin Steam IDs");
 
-                // Whitelist IDs
-                var whitelistMatches = Regex.Matches(content, @"^[ \t]*WhitelistIDs[ \t]*=[ \t]*(\d+)", RegexOptions.Multiline);
-                foreach (Match m in whitelistMatches)
-                {
-                    config.WhitelistIds.Add(m.Groups[1].Value);
-                }
+                config.WhitelistIds = ReadIniIdList(content, "WhitelistIDs", StateSection);
                 _logger.Debug($"Loaded {config.WhitelistIds.Count} whitelist IDs");
 
-                // VIP IDs
-                var vipMatches = Regex.Matches(content, @"^[ \t]*VIPs[ \t]*=[ \t]*(\d+)", RegexOptions.Multiline);
-                foreach (Match m in vipMatches)
-                {
-                    config.VipIds.Add(m.Groups[1].Value);
-                }
+                config.VipIds = ReadIniIdList(content, "VIPs", StateSection);
                 _logger.Debug($"Loaded {config.VipIds.Count} VIP IDs");
 
                 // Load dinosaurs from launcher settings first (priority)
@@ -516,8 +522,11 @@ namespace IsleServerLauncher.Services
                     // form, quoted values) as "no data" and enable every species, wiping the
                     // admin's restriction. Substring-matching "AllowedClasses=" is no good
                     // either - it misses the spaced form.
-                    bool hasAllowedClasses = Regex.IsMatch(content,
-                        @"^[ \t]*\+?AllowedClasses[ \t]*=", RegexOptions.Multiline | RegexOptions.IgnoreCase);
+                    // Presence is a raw line count; the enabled set goes through the one parser,
+                    // so this path can never disagree with the discovery pass above about what
+                    // a line means.
+                    bool hasAllowedClasses =
+                        ReadIniValuesInSections(content, "AllowedClasses", StateSection).Count > 0;
                     var allowed = ExtractAllowedClasses(content);
 
                     if (hasAllowedClasses)
@@ -603,7 +612,7 @@ namespace IsleServerLauncher.Services
                     ? File.ReadAllLines(_configPath).ToList()
                     : new List<string>();
 
-                string section = "/Script/TheIsle.TIGameSession";
+                string section = SessionSection;
 
                 // Identity
                 UpdateIniValue(lines, section, "ServerName", config.ServerName);
@@ -662,7 +671,7 @@ namespace IsleServerLauncher.Services
                 UpdateIniValue(lines, section, "QueueHeartbeatMaxMisses", config.QueueHeartbeatMaxMisses);
 
                 // Lists
-                string stateSection = "/Script/TheIsle.TIGameStateBase";
+                string stateSection = StateSection;
 
                 var adminList = config.AdminSteamIds
                     .Where(id => !string.IsNullOrWhiteSpace(id))
@@ -959,7 +968,7 @@ namespace IsleServerLauncher.Services
             int sectionIdx = -1;
             for (int i = 0; i < lines.Count; i++)
             {
-                if (lines[i].Trim().Equals($"[{section}]", StringComparison.OrdinalIgnoreCase))
+                if (IsSectionHeader(lines[i], section))
                 {
                     sectionIdx = i;
                     break;
@@ -1018,7 +1027,7 @@ namespace IsleServerLauncher.Services
             int sectionIdx = -1;
             for (int i = 0; i < lines.Count; i++)
             {
-                if (lines[i].Trim().Equals($"[{section}]", StringComparison.OrdinalIgnoreCase))
+                if (IsSectionHeader(lines[i], section))
                 {
                     sectionIdx = i;
                     break;
@@ -1061,13 +1070,86 @@ namespace IsleServerLauncher.Services
         }
 
         /// <summary>
-        /// Reads every AllowedClasses value out of Game.ini, in file order.
+        /// Reads the AllowedClasses entries the game actually honours, in file order - that is,
+        /// only those in the section the property is declared on and the save path rewrites.
         /// </summary>
         private static List<string> ExtractAllowedClasses(string content)
         {
-            // Tolerates the spaced "AllowedClasses = X" form, matching the writer
-            return Regex.Matches(content, $@"^[ \t]*AllowedClasses[ \t]*=[ \t]*({InputValidator.PlayableClassNamePattern})", RegexOptions.Multiline)
-                .Select(m => m.Groups[1].Value)
+            return ParseIniListEntries(ReadIniValuesInSections(content, "AllowedClasses", StateSection))
+                .Select(entry => TakeLeadingToken(entry, LeadingClassName))
+                .Where(name => name != null)
+                .Select(name => name!)
+                .ToList();
+        }
+
+        /// <summary>
+        /// Returns the leading run of valid characters, or null if the value doesn't start with
+        /// one. Used to repair a trailing-junk value rather than discard it.
+        /// </summary>
+        /// <remarks>
+        /// Discarding is not a safe default here: the save path's removal predicate matches the
+        /// whole line regardless, so an entry this rejects is deleted from Game.ini without ever
+        /// being shown - losing an admin's access or a species silently. Salvaging the prefix
+        /// keeps the round trip lossless and rewrites the line in clean form.
+        /// </remarks>
+        private static string? TakeLeadingToken(string value, Regex leading)
+        {
+            var match = leading.Match(value);
+            return match.Success ? match.Value : null;
+        }
+
+        /// <summary>
+        /// True if the line is the header for the given section. Readers and writers must use
+        /// this one rule: if the reader recognises a header the writer doesn't, the save can't
+        /// find the section, appends a duplicate at end of file and leaves the originals in
+        /// place - so unticking a species or deleting an admin appears to work and then comes
+        /// back on the next load.
+        /// </summary>
+        private static bool IsSectionHeader(string line, string section)
+        {
+            string trimmed = line.Trim();
+            if (!trimmed.StartsWith("[") || !trimmed.EndsWith("]")) return false;
+
+            return trimmed.Substring(1, trimmed.Length - 2).Trim()
+                .Equals(section, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Turns raw ini list values into usable entries, accepting every form the writer's
+        /// removal predicate also matches: quoted, parenthesised and comma-joined.
+        /// </summary>
+        /// <remarks>
+        /// Parsing must never be stricter than removal. A value this drops is still a line the
+        /// save can delete, so the entry would vanish from Game.ini without ever appearing in
+        /// the UI - which is how an admin's whole allow-list could be wiped in one save.
+        /// </remarks>
+        private static List<string> ParseIniListEntries(IEnumerable<string> rawValues)
+        {
+            var results = new List<string>();
+
+            foreach (var value in rawValues)
+            {
+                foreach (var part in value.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var entry = SanitizeIniListEntry(part);
+                    if (entry != null) results.Add(entry);
+                }
+            }
+
+            return results;
+        }
+
+        /// <summary>
+        /// Reads a Steam ID list from the one section the game reads it from, keeping only
+        /// well-formed numeric IDs and collapsing repeats.
+        /// </summary>
+        private static List<string> ReadIniIdList(string content, string key, string section)
+        {
+            return ParseIniListEntries(ReadIniValuesInSections(content, key, section))
+                .Select(entry => TakeLeadingToken(entry, LeadingDigits))
+                .Where(id => id != null)
+                .Select(id => id!)
+                .Distinct(StringComparer.Ordinal)
                 .ToList();
         }
 
@@ -1096,6 +1178,15 @@ namespace IsleServerLauncher.Services
         private static bool TryMatchIniKey(string trimmedLine, string key, out string value)
         {
             value = "";
+
+            // Inside a single ini, UE's "+Key=" append form means the same as "Key=" for the
+            // repeated list keys this helper serves, and their readers accept it, so the writer
+            // must be able to replace those lines too - otherwise an entry loads into the UI,
+            // survives the rewrite and gets duplicated. Scalar keys go through GetConfigValue /
+            // UpdateIniValue instead, which don't take a prefix; "+" is meaningless there.
+            // "-", "!" and "." carry different semantics and are deliberately left untouched.
+            if (trimmedLine.StartsWith("+")) trimmedLine = trimmedLine.Substring(1).TrimStart();
+
             if (!trimmedLine.StartsWith(key, StringComparison.OrdinalIgnoreCase)) return false;
 
             int i = key.Length;
