@@ -95,6 +95,50 @@ namespace IsleServerLauncher.Services
             return true;
         }
 
+        /// <summary>
+        /// Parses a number the user typed, accepting either decimal separator. Someone on a
+        /// German locale types "1,5" and someone on an English one types "1.5"; both mean the
+        /// same value, and the server only ever accepts the invariant form.
+        /// </summary>
+        public static bool TryParseUserNumber(string? text, out double value)
+        {
+            value = 0;
+            if (string.IsNullOrWhiteSpace(text)) return false;
+
+            text = text.Trim();
+            const System.Globalization.NumberStyles styles = System.Globalization.NumberStyles.Float;
+
+            return double.TryParse(text, styles, System.Globalization.CultureInfo.InvariantCulture, out value)
+                || double.TryParse(text, styles, System.Globalization.CultureInfo.CurrentCulture, out value);
+        }
+
+        /// <summary>
+        /// Rewrites a user-typed number into the invariant form the game's ini parser expects.
+        /// Only the decimal separator is swapped - the text is never reformatted through a
+        /// numeric type, which would turn 0.00001 into "1E-05" and large values into "1E+18",
+        /// neither of which the game's ini parser understands. Non-numbers pass through.
+        /// </summary>
+        public static string NormalizeNumberForConfig(string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return text ?? "";
+
+            string trimmed = text.Trim();
+            const System.Globalization.NumberStyles styles = System.Globalization.NumberStyles.Float;
+
+            // Already in the form the game wants - leave exactly as typed
+            if (double.TryParse(trimmed, styles, System.Globalization.CultureInfo.InvariantCulture, out _))
+                return trimmed;
+
+            // Otherwise, if this locale reads it as a number, swap its decimal separator
+            if (double.TryParse(trimmed, styles, System.Globalization.CultureInfo.CurrentCulture, out _))
+            {
+                string sep = System.Globalization.CultureInfo.CurrentCulture.NumberFormat.NumberDecimalSeparator;
+                if (sep != ".") return trimmed.Replace(sep, ".");
+            }
+
+            return trimmed;
+        }
+
         // Numeric range validation
         public static bool IsValidNumber(string text, int min, int max, out int value)
         {

@@ -353,7 +353,19 @@ namespace IsleServerLauncher
 
         private async void btnSetAIDensity_Click(object sender, RoutedEventArgs e)
         {
-            if (float.TryParse(txtLiveAIDensity.Text, out float d)) await RunRconCommand(async r => await r.SetAIDensityAsync(d), "Set AI Density");
+            // Accept either decimal separator: a current-culture-only parse reads "1.5" as 15
+            // on locales that treat '.' as a group separator.
+            // Bounds matter as well as parseability: NumberStyles.Float happily accepts
+            // "NaN" and "Infinity", which would go straight out over RCON.
+            if (InputValidator.TryParseUserNumber(txtLiveAIDensity.Text, out double d)
+                && double.IsFinite(d) && d >= 0 && d <= 100)
+            {
+                await RunRconCommand(async r => await r.SetAIDensityAsync((float)d), "Set AI Density");
+            }
+            else
+            {
+                ShowToast("AI Density must be a number between 0 and 100", true);
+            }
         }
 
         private async void btnWipeCorpses_Click(object sender, RoutedEventArgs e)

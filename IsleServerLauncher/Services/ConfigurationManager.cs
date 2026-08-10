@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -281,24 +281,40 @@ namespace IsleServerLauncher.Services
                 config.QueueHeartbeatTimeoutSeconds = GetConfigValue(content, "QueueHeartbeatTimeoutSeconds") ?? "5";
                 config.QueueHeartbeatMaxMisses = GetConfigValue(content, "QueueHeartbeatMaxMisses") ?? "2";
 
-                var disallowedAiRaw = GetConfigValue(content, "DisallowedAIClasses");
-                if (!string.IsNullOrWhiteSpace(disallowedAiRaw))
-                {
-                    var disallowed = disallowedAiRaw
-                        .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
-                        .Select(item => item.Trim())
-                        .Where(item => item.Length > 0);
+                // DisallowedAIClasses is a TArray<FString>, so it is one line per entry.
+                // Older launcher versions wrote a single comma-joined line, so split on
+                // commas too and existing selections survive the upgrade.
+                // Read only the sections the save path rewrites - the session section where it
+                // belongs, plus the state section older versions wrongly wrote it to.
+                var disallowed = ReadIniValuesInSections(content, "DisallowedAIClasses",
+                        "/Script/TheIsle.TIGameSession", "/Script/TheIsle.TIGameStateBase")
+                    .SelectMany(v => v.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
+                    .Select(SanitizeIniListEntry)
+                    .Where(item => item != null)
+                    .Select(item => item!)
+                    .Distinct(StringComparer.OrdinalIgnoreCase);
 
-                    foreach (var name in disallowed)
+                foreach (var name in disallowed)
+                {
+                    var option = config.DisallowedAIClasses.FirstOrDefault(ai =>
+                        ai.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+
+                    if (option == null)
                     {
-                        var option = config.DisallowedAIClasses.FirstOrDefault(ai =>
-                            ai.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
-                        if (option != null) option.IsEnabled = true;
+                        // Adopt AI classes outside the built-in list instead of dropping them.
+                        // The save path rewrites this key wholesale, so anything not carried
+                        // here would be deleted from Game.ini - the same trap that used to
+                        // eat hand-added AllowedClasses entries.
+                        option = new AiOption { Name = name };
+                        config.DisallowedAIClasses.Add(option);
+                        _logger.Info($"Discovered non-standard AI class '{name}' in Game.ini; preserving it.");
                     }
+
+                    option.IsEnabled = true;
                 }
                 
                 // Admin IDs
-                var adminMatches = Regex.Matches(content, @"AdminsSteamIDs=(\d+)");
+                var adminMatches = Regex.Matches(content, @"^[ \t]*AdminsSteamIDs[ \t]*=[ \t]*(\d+)", RegexOptions.Multiline);
                 foreach (Match m in adminMatches)
                 {
                     config.AdminSteamIds.Add(m.Groups[1].Value);
@@ -306,7 +322,7 @@ namespace IsleServerLauncher.Services
                 _logger.Debug($"Loaded {config.AdminSteamIds.Count} admin Steam IDs");
 
                 // Whitelist IDs
-                var whitelistMatches = Regex.Matches(content, @"WhitelistIDs=(\d+)");
+                var whitelistMatches = Regex.Matches(content, @"^[ \t]*WhitelistIDs[ \t]*=[ \t]*(\d+)", RegexOptions.Multiline);
                 foreach (Match m in whitelistMatches)
                 {
                     config.WhitelistIds.Add(m.Groups[1].Value);
@@ -314,7 +330,7 @@ namespace IsleServerLauncher.Services
                 _logger.Debug($"Loaded {config.WhitelistIds.Count} whitelist IDs");
 
                 // VIP IDs
-                var vipMatches = Regex.Matches(content, @"VIPs=(\d+)");
+                var vipMatches = Regex.Matches(content, @"^[ \t]*VIPs[ \t]*=[ \t]*(\d+)", RegexOptions.Multiline);
                 foreach (Match m in vipMatches)
                 {
                     config.VipIds.Add(m.Groups[1].Value);
@@ -440,6 +456,19 @@ namespace IsleServerLauncher.Services
                         MergeDiscoveredDinos(config, knownDinos.Split(','), "launcher settings");
                     }
 
+                    // Same for adopted AI classes, so unticking one doesn't make it vanish
+                    string? knownAi = GetConfigValue(settings, "KnownAi");
+                    if (!string.IsNullOrWhiteSpace(knownAi))
+                    {
+                        foreach (var raw in knownAi.Split(','))
+                        {
+                            string name = raw.Trim();
+                            if (name.Length == 0) continue;
+                            if (config.DisallowedAIClasses.Any(a => a.Name.Equals(name, StringComparison.OrdinalIgnoreCase))) continue;
+                            config.DisallowedAIClasses.Add(new AiOption { Name = name });
+                        }
+                    }
+
                     string? enabledDinos = GetConfigValue(settings, "EnabledDinos");
                     if (enabledDinos != null)
                     {
@@ -482,10 +511,18 @@ namespace IsleServerLauncher.Services
                 // Load dinos from Game.ini only if not loaded from settings
                 if (!dinosLoadedFromSettings)
                 {
-                    if (content.Contains("AllowedClasses="))
+                    // Presence and parse result are separate questions. Keying off the parsed
+                    // count alone would treat a present-but-unparsable list (UE's "+Key=" append
+                    // form, quoted values) as "no data" and enable every species, wiping the
+                    // admin's restriction. Substring-matching "AllowedClasses=" is no good
+                    // either - it misses the spaced form.
+                    bool hasAllowedClasses = Regex.IsMatch(content,
+                        @"^[ \t]*\+?AllowedClasses[ \t]*=", RegexOptions.Multiline | RegexOptions.IgnoreCase);
+                    var allowed = ExtractAllowedClasses(content);
+
+                    if (hasAllowedClasses)
                     {
                         foreach (var dino in config.Dinosaurs) dino.IsEnabled = false;
-                        var allowed = ExtractAllowedClasses(content);
                         foreach (var name in allowed)
                         {
                             var item = config.Dinosaurs.FirstOrDefault(d =>
@@ -593,35 +630,35 @@ namespace IsleServerLauncher.Services
                 UpdateIniValue(lines, section, "bEnableGlobalChat", config.GlobalChat.ToString().ToLower());
                 UpdateIniValue(lines, section, "bEnableMigration", config.Migration.ToString().ToLower());
                 UpdateIniValue(lines, section, "bServerFallDamage", config.FallDamage.ToString().ToLower());
-                UpdateIniValue(lines, section, "GrowthMultiplier", config.GrowthMultiplier);
-                UpdateIniValue(lines, section, "CorpseDecayMultiplier", config.CorpseDecay);
-                UpdateIniValue(lines, section, "ServerDayLengthMinutes", config.DayLength);
-                UpdateIniValue(lines, section, "ServerNightLengthMinutes", config.NightLength);
-                UpdateIniValue(lines, section, "MaxMigrationTime", config.MigrationTime);
+                UpdateIniValue(lines, section, "GrowthMultiplier", InputValidator.NormalizeNumberForConfig(config.GrowthMultiplier));
+                UpdateIniValue(lines, section, "CorpseDecayMultiplier", InputValidator.NormalizeNumberForConfig(config.CorpseDecay));
+                UpdateIniValue(lines, section, "ServerDayLengthMinutes", InputValidator.NormalizeNumberForConfig(config.DayLength));
+                UpdateIniValue(lines, section, "ServerNightLengthMinutes", InputValidator.NormalizeNumberForConfig(config.NightLength));
+                UpdateIniValue(lines, section, "MaxMigrationTime", InputValidator.NormalizeNumberForConfig(config.MigrationTime));
 
                 // AI & Environment
                 UpdateIniValue(lines, section, "bSpawnAI", config.SpawnAI.ToString().ToLower());
                 UpdateIniValue(lines, section, "bSpawnPlants", config.SpawnPlants.ToString().ToLower());
                 UpdateIniValue(lines, section, "bServerDynamicWeather", config.DynamicWeather.ToString().ToLower());
-                UpdateIniValue(lines, section, "AISpawnInterval", config.AISpawnInterval);
-                UpdateIniValue(lines, section, "AIDensity", config.AIDensity);
+                UpdateIniValue(lines, section, "AISpawnInterval", InputValidator.NormalizeNumberForConfig(config.AISpawnInterval));
+                UpdateIniValue(lines, section, "AIDensity", InputValidator.NormalizeNumberForConfig(config.AIDensity));
                 UpdateIniValue(lines, section, "Discord", string.IsNullOrWhiteSpace(config.DiscordInvite) ? null : config.DiscordInvite);
-                UpdateIniValue(lines, section, "RegionSpawnCooldownTimeSeconds", config.RegionSpawnCooldownTimeSeconds);
+                UpdateIniValue(lines, section, "RegionSpawnCooldownTimeSeconds", InputValidator.NormalizeNumberForConfig(config.RegionSpawnCooldownTimeSeconds));
                 UpdateIniValue(lines, section, "bUseRegionSpawnCooldown", config.UseRegionSpawnCooldown.ToString().ToLower());
                 UpdateIniValue(lines, section, "bUseRegionSpawning", config.UseRegionSpawning.ToString().ToLower());
-                UpdateIniValue(lines, section, "PlantSpawnMultiplier", config.PlantSpawnMultiplier);
+                UpdateIniValue(lines, section, "PlantSpawnMultiplier", InputValidator.NormalizeNumberForConfig(config.PlantSpawnMultiplier));
                 UpdateIniValue(lines, section, "bAllowRecordingReplay", config.AllowRecordingReplay.ToString().ToLower());
                 UpdateIniValue(lines, section, "bEnableDiets", config.EnableDiets.ToString().ToLower());
                 UpdateIniValue(lines, section, "bEnablePatrolZones", config.EnablePatrolZones.ToString().ToLower());
-                UpdateIniValue(lines, section, "MassMigrationTime", config.MassMigrationTime);
-                UpdateIniValue(lines, section, "MassMigrationDisableTime", config.MassMigrationDisableTime);
+                UpdateIniValue(lines, section, "MassMigrationTime", InputValidator.NormalizeNumberForConfig(config.MassMigrationTime));
+                UpdateIniValue(lines, section, "MassMigrationDisableTime", InputValidator.NormalizeNumberForConfig(config.MassMigrationDisableTime));
                 UpdateIniValue(lines, section, "bEnableMassMigration", config.EnableMassMigration.ToString().ToLower());
-                UpdateIniValue(lines, section, "SpeciesMigrationTime", config.SpeciesMigrationTime);
-                UpdateIniValue(lines, section, "MinWeatherVariationInterval", config.MinWeatherVariationInterval);
-                UpdateIniValue(lines, section, "MaxWeatherVariationInterval", config.MaxWeatherVariationInterval);
-                UpdateIniValue(lines, section, "QueueJoinTimeoutSeconds", config.QueueJoinTimeoutSeconds);
-                UpdateIniValue(lines, section, "QueueHeartbeatIntervalSeconds", config.QueueHeartbeatIntervalSeconds);
-                UpdateIniValue(lines, section, "QueueHeartbeatTimeoutSeconds", config.QueueHeartbeatTimeoutSeconds);
+                UpdateIniValue(lines, section, "SpeciesMigrationTime", InputValidator.NormalizeNumberForConfig(config.SpeciesMigrationTime));
+                UpdateIniValue(lines, section, "MinWeatherVariationInterval", InputValidator.NormalizeNumberForConfig(config.MinWeatherVariationInterval));
+                UpdateIniValue(lines, section, "MaxWeatherVariationInterval", InputValidator.NormalizeNumberForConfig(config.MaxWeatherVariationInterval));
+                UpdateIniValue(lines, section, "QueueJoinTimeoutSeconds", InputValidator.NormalizeNumberForConfig(config.QueueJoinTimeoutSeconds));
+                UpdateIniValue(lines, section, "QueueHeartbeatIntervalSeconds", InputValidator.NormalizeNumberForConfig(config.QueueHeartbeatIntervalSeconds));
+                UpdateIniValue(lines, section, "QueueHeartbeatTimeoutSeconds", InputValidator.NormalizeNumberForConfig(config.QueueHeartbeatTimeoutSeconds));
                 UpdateIniValue(lines, section, "QueueHeartbeatMaxMisses", config.QueueHeartbeatMaxMisses);
 
                 // Lists
@@ -652,11 +689,22 @@ namespace IsleServerLauncher.Services
                 UpdateIniList(lines, stateSection, "VIPs", vipList);
                 UpdateIniList(lines, stateSection, "AllowedClasses", dinoList);
 
-                var disallowedAi = config.DisallowedAIClasses
+                // DisallowedAIClasses is a Config TArray<FString> on TIGameSession - not
+                // TIGameStateBase - so it belongs in the session section and must be written
+                // one line per entry, exactly like AllowedClasses above. Earlier versions
+                // wrote a single comma-joined line into the wrong section, which the game
+                // would have read as one nonsense entry (if it read it at all).
+                var disallowedAiList = config.DisallowedAIClasses
                     .Where(ai => ai.IsEnabled)
-                    .Select(ai => ai.Name)
+                    .Select(ai => $"DisallowedAIClasses={ai.Name}")
                     .ToList();
-                UpdateIniValue(lines, stateSection, "DisallowedAIClasses", string.Join(",", disallowedAi));
+                UpdateIniList(lines, section, "DisallowedAIClasses", disallowedAiList);
+
+                // Drop every misplaced legacy line so none can shadow the correct ones.
+                // UpdateIniValue(null) would only remove the first match, and the loader
+                // reads all DisallowedAIClasses lines, so leftovers would re-tick classes
+                // the user just unticked.
+                UpdateIniList(lines, stateSection, "DisallowedAIClasses", new List<string>());
 
                 File.WriteAllLines(_configPath, lines);
                 _logger.Debug("Game.ini updated successfully");
@@ -865,6 +913,7 @@ namespace IsleServerLauncher.Services
                 // Every species the launcher knows about, enabled or not, so discovered
                 // ones stay in the list after being unticked
                 settings.AppendLine($"KnownDinos={string.Join(",", config.Dinosaurs.Select(d => d.Name))}");
+                settings.AppendLine($"KnownAi={string.Join(",", config.DisallowedAIClasses.Select(a => a.Name))}");
 
                 File.WriteAllText(_settingsPath, settings.ToString());
                 _logger.Debug("Launcher settings saved successfully");
@@ -1000,7 +1049,7 @@ namespace IsleServerLauncher.Services
             // Remove existing entries
             for (int i = nextSectionIdx - 1; i > sectionIdx; i--)
             {
-                if (lines[i].Trim().StartsWith(keyPrefix + "=", StringComparison.OrdinalIgnoreCase))
+                if (TryMatchIniKey(lines[i].Trim(), keyPrefix, out _))
                 {
                     lines.RemoveAt(i);
                     nextSectionIdx--;
@@ -1016,7 +1065,8 @@ namespace IsleServerLauncher.Services
         /// </summary>
         private static List<string> ExtractAllowedClasses(string content)
         {
-            return Regex.Matches(content, $@"^\s*AllowedClasses=({InputValidator.PlayableClassNamePattern})", RegexOptions.Multiline)
+            // Tolerates the spaced "AllowedClasses = X" form, matching the writer
+            return Regex.Matches(content, $@"^[ \t]*AllowedClasses[ \t]*=[ \t]*({InputValidator.PlayableClassNamePattern})", RegexOptions.Multiline)
                 .Select(m => m.Groups[1].Value)
                 .ToList();
         }
@@ -1036,6 +1086,65 @@ namespace IsleServerLauncher.Services
                 config.Dinosaurs.Add(new DinoOption { Name = name, IsEnabled = enabledIfNew });
                 _logger.Info($"Discovered non-standard playable '{name}' from {source}; preserving it (enabled={enabledIfNew}).");
             }
+        }
+
+        /// <summary>
+        /// Matches "Key=value" and the spaced "Key = value" form that UpdateIniValue also
+        /// tolerates. Reader and writer must agree on this, or a spaced line is invisible to
+        /// the loader yet survives the rewrite and shadows the correct entry.
+        /// </summary>
+        private static bool TryMatchIniKey(string trimmedLine, string key, out string value)
+        {
+            value = "";
+            if (!trimmedLine.StartsWith(key, StringComparison.OrdinalIgnoreCase)) return false;
+
+            int i = key.Length;
+            while (i < trimmedLine.Length && (trimmedLine[i] == ' ' || trimmedLine[i] == '\t')) i++;
+            if (i >= trimmedLine.Length || trimmedLine[i] != '=') return false;
+
+            value = trimmedLine.Substring(i + 1).Trim();
+            return true;
+        }
+
+        /// <summary>
+        /// Reads every value of a repeated key, but only from the sections given. Scanning the
+        /// whole file would pick up occurrences the save path never rewrites, so unticking
+        /// such an entry would appear to work and then come back on the next load.
+        /// </summary>
+        private static List<string> ReadIniValuesInSections(string content, string key, params string[] sections)
+        {
+            var wanted = new HashSet<string>(sections, StringComparer.OrdinalIgnoreCase);
+            var results = new List<string>();
+            string? currentSection = null;
+
+            foreach (var rawLine in content.Split('\n'))
+            {
+                string line = rawLine.Trim();
+                if (line.StartsWith("[") && line.EndsWith("]"))
+                {
+                    currentSection = line.Substring(1, line.Length - 2).Trim();
+                    continue;
+                }
+
+                if (currentSection == null || !wanted.Contains(currentSection)) continue;
+                if (!TryMatchIniKey(line, key, out string value)) continue;
+
+                results.Add(value);
+            }
+
+            return results;
+        }
+
+        /// <summary>
+        /// Cleans one entry of an ini list. Tolerates the quoted/parenthesised array forms UE
+        /// also accepts, and rejects anything still holding characters that would corrupt the
+        /// file if written back.
+        /// </summary>
+        private static string? SanitizeIniListEntry(string raw)
+        {
+            string value = raw.Trim().Trim('(', ')').Trim().Trim('"').Trim();
+            if (value.Length == 0 || value.Length > 128) return null;
+            return value.IndexOfAny(new[] { '=', '[', ']', '"', '(', ')', '\r' }) >= 0 ? null : value;
         }
 
         private string? GetConfigValue(string content, string key)

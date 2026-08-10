@@ -173,7 +173,10 @@ namespace IsleServerLauncher.Services
 
         public async Task<bool> SetAIDensityAsync(float density)
         {
-            var response = await SendCommandAsync(CMD_AIDENSITY, density.ToString("F2"));
+            // Invariant culture: on a locale that uses a comma decimal separator this would
+            // otherwise send "1,50", which the server cannot parse.
+            var response = await SendCommandAsync(CMD_AIDENSITY,
+                density.ToString("F2", System.Globalization.CultureInfo.InvariantCulture));
             return response != null;
         }
 
