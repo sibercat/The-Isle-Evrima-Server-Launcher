@@ -199,6 +199,12 @@ namespace IsleServerLauncher.Services
             new Regex("^" + InputValidator.PlayableClassNamePattern, RegexOptions.Compiled);
         private static readonly Regex LeadingDigits = new Regex(@"^\d+", RegexOptions.Compiled);
 
+        // AI class identifiers can't be pattern-checked - they are FNames from level data that
+        // the SDK dump doesn't expose, and the built-in list holds labels like "Frogs/Toads".
+        // So accept anything that wouldn't corrupt the file if written back out.
+        private static readonly Regex LeadingAiClassName =
+            new Regex(@"^[^=\[\]()""\r\n]+", RegexOptions.Compiled);
+
         private readonly string _serverFolder;
         private readonly string _configPath;
         private readonly string _engineConfigPath;
@@ -242,70 +248,67 @@ namespace IsleServerLauncher.Services
                 _logger.Debug("Game.ini loaded successfully");
 
                 // Identity
-                config.ServerName = GetConfigValue(content, "ServerName") ?? "My Amazing Server";
-                config.MaxPlayers = GetConfigValue(content, "MaxPlayerCount") ?? "100";
-                config.ServerPassword = GetConfigValue(content, "ServerPassword")?.Replace("\"", "") ?? "";
+                config.ServerName = GetGameIniValue(content, "ServerName") ?? "My Amazing Server";
+                config.MaxPlayers = GetGameIniValue(content, "MaxPlayerCount") ?? "100";
+                config.ServerPassword = GetGameIniValue(content, "ServerPassword")?.Replace("\"", "") ?? "";
 
                 // Security
-                config.RconPassword = GetConfigValue(content, "RconPassword")?.Replace("\"", "") ?? "ChangeMe123";
-                config.RconPort = GetConfigValue(content, "RconPort") ?? "8888";
-                config.RconEnabled = GetBoolValue(content, "bRconEnabled", defaultValue: false);
-                config.Whitelist = GetBoolValue(content, "bServerWhitelist");
+                config.RconPassword = GetGameIniValue(content, "RconPassword")?.Replace("\"", "") ?? "ChangeMe123";
+                config.RconPort = GetGameIniValue(content, "RconPort") ?? "8888";
+                config.RconEnabled = GetGameIniBool(content, "bRconEnabled", defaultValue: false);
+                config.Whitelist = GetGameIniBool(content, "bServerWhitelist");
 
                 // Network
-                config.QueuePort = GetConfigValue(content, "QueuePort") ?? "10000";
-                config.QueueEnabled = GetBoolValue(content, "bQueueEnabled");
+                config.QueuePort = GetGameIniValue(content, "QueuePort") ?? "10000";
+                config.QueueEnabled = GetGameIniBool(content, "bQueueEnabled");
 
                 // Time
-                config.DayLength = GetConfigValue(content, "ServerDayLengthMinutes") ?? "45";
-                config.NightLength = GetConfigValue(content, "ServerNightLengthMinutes") ?? "20";
+                config.DayLength = GetGameIniValue(content, "ServerDayLengthMinutes") ?? "45";
+                config.NightLength = GetGameIniValue(content, "ServerNightLengthMinutes") ?? "20";
 
                 // Gameplay
-                config.GlobalChat = GetBoolValue(content, "bEnableGlobalChat") || GetBoolValue(content, "bServerGlobalChat");
-                config.Humans = GetBoolValue(content, "bEnableHumans");
-                config.Mutations = GetBoolValue(content, "bEnableMutations");
-                config.Migration = GetBoolValue(content, "bEnableMigration");
-                config.FallDamage = GetBoolValue(content, "bServerFallDamage");
-                config.GrowthMultiplier = GetConfigValue(content, "GrowthMultiplier") ?? "1";
-                config.CorpseDecay = GetConfigValue(content, "CorpseDecayMultiplier") ?? "1";
-                config.MigrationTime = GetConfigValue(content, "MaxMigrationTime") ?? "5400";
+                config.GlobalChat = GetGameIniBool(content, "bEnableGlobalChat") || GetGameIniBool(content, "bServerGlobalChat");
+                config.Humans = GetGameIniBool(content, "bEnableHumans");
+                config.Mutations = GetGameIniBool(content, "bEnableMutations");
+                config.Migration = GetGameIniBool(content, "bEnableMigration");
+                config.FallDamage = GetGameIniBool(content, "bServerFallDamage");
+                config.GrowthMultiplier = GetGameIniValue(content, "GrowthMultiplier") ?? "1";
+                config.CorpseDecay = GetGameIniValue(content, "CorpseDecayMultiplier") ?? "1";
+                config.MigrationTime = GetGameIniValue(content, "MaxMigrationTime") ?? "5400";
 
                 // AI & Environment
-                config.SpawnAI = GetBoolValue(content, "bSpawnAI");
-                config.SpawnPlants = GetBoolValue(content, "bSpawnPlants");
-                config.DynamicWeather = GetBoolValue(content, "bServerDynamicWeather");
-                config.AISpawnInterval = GetConfigValue(content, "AISpawnInterval") ?? "40";
-                config.AIDensity = GetConfigValue(content, "AIDensity") ?? "1";
-                config.DiscordInvite = GetConfigValue(content, "Discord") ?? "";
-                config.RegionSpawnCooldownTimeSeconds = GetConfigValue(content, "RegionSpawnCooldownTimeSeconds") ?? "30";
-                config.UseRegionSpawnCooldown = GetBoolValue(content, "bUseRegionSpawnCooldown");
-                config.UseRegionSpawning = GetBoolValue(content, "bUseRegionSpawning");
-                config.PlantSpawnMultiplier = GetConfigValue(content, "PlantSpawnMultiplier") ?? "1";
-                config.AllowRecordingReplay = GetBoolValue(content, "bAllowRecordingReplay", defaultValue: true);
-                config.EnableDiets = GetBoolValue(content, "bEnableDiets", defaultValue: true);
-                config.EnablePatrolZones = GetBoolValue(content, "bEnablePatrolZones", defaultValue: true);
-                config.MassMigrationTime = GetConfigValue(content, "MassMigrationTime") ?? "43200";
-                config.MassMigrationDisableTime = GetConfigValue(content, "MassMigrationDisableTime") ?? "7200";
-                config.EnableMassMigration = GetBoolValue(content, "bEnableMassMigration");
-                config.SpeciesMigrationTime = GetConfigValue(content, "SpeciesMigrationTime") ?? "10800";
-                config.MinWeatherVariationInterval = GetConfigValue(content, "MinWeatherVariationInterval") ?? "600";
-                config.MaxWeatherVariationInterval = GetConfigValue(content, "MaxWeatherVariationInterval") ?? "900";
-                config.QueueJoinTimeoutSeconds = GetConfigValue(content, "QueueJoinTimeoutSeconds") ?? "30";
-                config.QueueHeartbeatIntervalSeconds = GetConfigValue(content, "QueueHeartbeatIntervalSeconds") ?? "8";
-                config.QueueHeartbeatTimeoutSeconds = GetConfigValue(content, "QueueHeartbeatTimeoutSeconds") ?? "5";
-                config.QueueHeartbeatMaxMisses = GetConfigValue(content, "QueueHeartbeatMaxMisses") ?? "2";
+                config.SpawnAI = GetGameIniBool(content, "bSpawnAI");
+                config.SpawnPlants = GetGameIniBool(content, "bSpawnPlants");
+                config.DynamicWeather = GetGameIniBool(content, "bServerDynamicWeather");
+                config.AISpawnInterval = GetGameIniValue(content, "AISpawnInterval") ?? "40";
+                config.AIDensity = GetGameIniValue(content, "AIDensity") ?? "1";
+                config.DiscordInvite = GetGameIniValue(content, "Discord") ?? "";
+                config.RegionSpawnCooldownTimeSeconds = GetGameIniValue(content, "RegionSpawnCooldownTimeSeconds") ?? "30";
+                config.UseRegionSpawnCooldown = GetGameIniBool(content, "bUseRegionSpawnCooldown");
+                config.UseRegionSpawning = GetGameIniBool(content, "bUseRegionSpawning");
+                config.PlantSpawnMultiplier = GetGameIniValue(content, "PlantSpawnMultiplier") ?? "1";
+                config.AllowRecordingReplay = GetGameIniBool(content, "bAllowRecordingReplay", defaultValue: true);
+                config.EnableDiets = GetGameIniBool(content, "bEnableDiets", defaultValue: true);
+                config.EnablePatrolZones = GetGameIniBool(content, "bEnablePatrolZones", defaultValue: true);
+                config.MassMigrationTime = GetGameIniValue(content, "MassMigrationTime") ?? "43200";
+                config.MassMigrationDisableTime = GetGameIniValue(content, "MassMigrationDisableTime") ?? "7200";
+                config.EnableMassMigration = GetGameIniBool(content, "bEnableMassMigration");
+                config.SpeciesMigrationTime = GetGameIniValue(content, "SpeciesMigrationTime") ?? "10800";
+                config.MinWeatherVariationInterval = GetGameIniValue(content, "MinWeatherVariationInterval") ?? "600";
+                config.MaxWeatherVariationInterval = GetGameIniValue(content, "MaxWeatherVariationInterval") ?? "900";
+                config.QueueJoinTimeoutSeconds = GetGameIniValue(content, "QueueJoinTimeoutSeconds") ?? "30";
+                config.QueueHeartbeatIntervalSeconds = GetGameIniValue(content, "QueueHeartbeatIntervalSeconds") ?? "8";
+                config.QueueHeartbeatTimeoutSeconds = GetGameIniValue(content, "QueueHeartbeatTimeoutSeconds") ?? "5";
+                config.QueueHeartbeatMaxMisses = GetGameIniValue(content, "QueueHeartbeatMaxMisses") ?? "2";
 
                 // DisallowedAIClasses is a TArray<FString>, so it is one line per entry.
                 // Older launcher versions wrote a single comma-joined line, so split on
                 // commas too and existing selections survive the upgrade.
                 // Read only the sections the save path rewrites - the session section where it
                 // belongs, plus the state section older versions wrongly wrote it to.
-                var disallowed = ReadIniValuesInSections(content, "DisallowedAIClasses",
-                        SessionSection, StateSection)
-                    .SelectMany(v => v.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
-                    .Select(SanitizeIniListEntry)
-                    .Where(item => item != null)
-                    .Select(item => item!)
+                var disallowed = ParseIniTokens(
+                        ReadIniValuesInSections(content, "DisallowedAIClasses", SessionSection, StateSection),
+                        LeadingAiClassName)
                     .Distinct(StringComparer.OrdinalIgnoreCase);
 
                 foreach (var name in disallowed)
@@ -698,10 +701,17 @@ namespace IsleServerLauncher.Services
                     .Select(d => $"AllowedClasses={d.Name}")
                     .ToList();
 
-                UpdateIniList(lines, stateSection, "AdminsSteamIDs", adminList);
-                UpdateIniList(lines, stateSection, "WhitelistIDs", whitelistList);
-                UpdateIniList(lines, stateSection, "VIPs", vipList);
-                UpdateIniList(lines, stateSection, "AllowedClasses", dinoList);
+                // Each rewrite is limited to lines the loader could actually read, so a value it
+                // skipped - a legacy "STEAM_0:1:..." id, an asset path - is preserved rather
+                // than deleted behind the admin's back.
+                UpdateIniList(lines, stateSection, "AdminsSteamIDs", adminList,
+                              v => IsRewritable(v, LeadingDigits));
+                UpdateIniList(lines, stateSection, "WhitelistIDs", whitelistList,
+                              v => IsRewritable(v, LeadingDigits));
+                UpdateIniList(lines, stateSection, "VIPs", vipList,
+                              v => IsRewritable(v, LeadingDigits));
+                UpdateIniList(lines, stateSection, "AllowedClasses", dinoList,
+                              v => IsRewritable(v, LeadingClassName));
 
                 // DisallowedAIClasses is a Config TArray<FString> on TIGameSession - not
                 // TIGameStateBase - so it belongs in the session section and must be written
@@ -712,13 +722,15 @@ namespace IsleServerLauncher.Services
                     .Where(ai => ai.IsEnabled)
                     .Select(ai => $"DisallowedAIClasses={ai.Name}")
                     .ToList();
-                UpdateIniList(lines, section, "DisallowedAIClasses", disallowedAiList);
+                UpdateIniList(lines, section, "DisallowedAIClasses", disallowedAiList,
+                              v => IsRewritable(v, LeadingAiClassName));
 
                 // Drop every misplaced legacy line so none can shadow the correct ones.
                 // UpdateIniValue(null) would only remove the first match, and the loader
                 // reads all DisallowedAIClasses lines, so leftovers would re-tick classes
                 // the user just unticked.
-                UpdateIniList(lines, stateSection, "DisallowedAIClasses", new List<string>());
+                UpdateIniList(lines, stateSection, "DisallowedAIClasses", new List<string>(),
+                              v => IsRewritable(v, LeadingAiClassName));
 
                 File.WriteAllLines(_configPath, lines);
                 _logger.Debug("Game.ini updated successfully");
@@ -990,43 +1002,59 @@ namespace IsleServerLauncher.Services
                 return;
             }
 
-            int keyIdx = -1;
-            int nextSectionIdx = lines.Count;
+            // A section can appear more than once and UE merges the blocks, so a scalar left
+            // behind in a later block would shadow the one written here and the setting would
+            // never stick. Collect every occurrence across all blocks of this section.
+            var keyIdxs = new List<int>();
+            int endOfFirstBlock = lines.Count;
+            bool inSection = false;
 
-            for (int i = sectionIdx + 1; i < lines.Count; i++)
+            for (int i = sectionIdx; i < lines.Count; i++)
             {
                 string line = lines[i].Trim();
+
                 if (line.StartsWith("[") && line.EndsWith("]"))
                 {
-                    nextSectionIdx = i;
-                    break;
+                    inSection = IsSectionHeader(lines[i], section);
+                    if (!inSection && endOfFirstBlock == lines.Count && i > sectionIdx)
+                        endOfFirstBlock = i;
+                    continue;
                 }
 
-                if (TryMatchIniKey(line, key, out _))
-                {
-                    keyIdx = i;
-                    break;
-                }
+                if (inSection && TryMatchIniKey(line, key, out _)) keyIdxs.Add(i);
+            }
+
+            // Drop the extras first so the surviving index stays valid.
+            for (int k = keyIdxs.Count - 1; k >= 1; k--)
+            {
+                lines.RemoveAt(keyIdxs[k]);
+                if (keyIdxs[k] < endOfFirstBlock) endOfFirstBlock--;
             }
 
             if (value == null)
             {
-                if (keyIdx != -1)
-                    lines.RemoveAt(keyIdx);
+                if (keyIdxs.Count > 0)
+                    lines.RemoveAt(keyIdxs[0]);
             }
             else
             {
-                if (keyIdx != -1)
-                    lines[keyIdx] = $"{key}={value}";
+                if (keyIdxs.Count > 0)
+                    lines[keyIdxs[0]] = $"{key}={value}";
                 else
-                    lines.Insert(nextSectionIdx, $"{key}={value}");
+                    lines.Insert(endOfFirstBlock, $"{key}={value}");
             }
         }
 
         /// <summary>
         /// Safely updates or replaces a list of INI values (like AllowedClasses)
         /// </summary>
-        private void UpdateIniList(List<string> lines, string section, string keyPrefix, List<string> newValues)
+        /// <param name="canRewrite">
+        /// Guards deletion: a line whose value the loader could not parse is not represented in
+        /// <paramref name="newValues"/>, so removing it would erase config that was never shown
+        /// in the UI. Such lines are left exactly as they are.
+        /// </param>
+        private void UpdateIniList(List<string> lines, string section, string keyPrefix,
+                                   List<string> newValues, Func<string, bool>? canRewrite = null)
         {
             // A section can appear more than once; UE merges the blocks and so does the reader.
             // Purging only the first block would leave entries the loader still sees, so a
@@ -1046,7 +1074,11 @@ namespace IsleServerLauncher.Services
                     continue;
                 }
 
-                if (inSection && TryMatchIniKey(trimmed, keyPrefix, out _)) staleKeyLines.Add(i);
+                if (inSection && TryMatchIniKey(trimmed, keyPrefix, out string existing) &&
+                    (canRewrite == null || canRewrite(existing)))
+                {
+                    staleKeyLines.Add(i);
+                }
             }
 
             if (firstSectionIdx == -1)
@@ -1174,7 +1206,8 @@ namespace IsleServerLauncher.Services
                 foreach (var part in value.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
                 {
                     var entry = TakeLeadingToken(part.Trim().Trim('(', ')', '"').Trim(), leading);
-                    if (entry != null) results.Add(entry);
+                    entry = entry?.Trim();
+                    if (!string.IsNullOrEmpty(entry)) results.Add(entry!);
                 }
             }
 
@@ -1266,16 +1299,11 @@ namespace IsleServerLauncher.Services
         }
 
         /// <summary>
-        /// Cleans one entry of an ini list. Tolerates the quoted/parenthesised array forms UE
-        /// also accepts, and rejects anything still holding characters that would corrupt the
-        /// file if written back.
+        /// True if a raw ini value yields at least one usable entry, and so can safely be
+        /// rewritten. Lines that fail this are left in the file untouched.
         /// </summary>
-        private static string? SanitizeIniListEntry(string raw)
-        {
-            string value = raw.Trim().Trim('(', ')').Trim().Trim('"').Trim();
-            if (value.Length == 0 || value.Length > 128) return null;
-            return value.IndexOfAny(new[] { '=', '[', ']', '"', '(', ')', '\r' }) >= 0 ? null : value;
-        }
+        private static bool IsRewritable(string rawValue, Regex leading) =>
+            ParseIniTokens(new[] { rawValue }, leading).Count > 0;
 
         /// <summary>
         /// Reads a single-valued key, accepting the same line shapes UpdateIniValue writes and
@@ -1287,11 +1315,27 @@ namespace IsleServerLauncher.Services
         /// absent, fell back to the default, and was rewritten as "AIDensity=1" - silently
         /// resetting the operator's value on the next save.
         /// </remarks>
-        private string? GetConfigValue(string content, string key)
+        private string? GetConfigValue(string content, string key, string? section = null)
         {
+            string? currentSection = null;
+
             foreach (var rawLine in content.Split('\n'))
             {
-                if (!TryMatchIniKey(rawLine.Trim(), key, out string value)) continue;
+                string line = rawLine.Trim();
+
+                if (line.StartsWith("[") && line.EndsWith("]"))
+                {
+                    currentSection = line.Substring(1, line.Length - 2).Trim();
+                    continue;
+                }
+
+                if (section != null &&
+                    !string.Equals(currentSection, section, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (!TryMatchIniKey(line, key, out string value)) continue;
 
                 value = value.Trim();
 
@@ -1308,6 +1352,25 @@ namespace IsleServerLauncher.Services
         private bool GetBoolValue(string content, string key, bool defaultValue = false)
         {
             var value = GetConfigValue(content, key);
+            if (value == null) return defaultValue;
+            return value.ToLower() == "true";
+        }
+
+        /// <summary>
+        /// Reads a Game.ini scalar from the section the game reads it from and the save path
+        /// writes it to. Every scalar the launcher manages lives on ATIGameSession.
+        /// </summary>
+        /// <remarks>
+        /// Scanning the whole file instead would let a stray copy in another section shadow the
+        /// real value: the loader would show the stray, the save would rewrite the real one, and
+        /// the setting would appear to revert on every restart.
+        /// </remarks>
+        private string? GetGameIniValue(string content, string key) =>
+            GetConfigValue(content, key, SessionSection);
+
+        private bool GetGameIniBool(string content, string key, bool defaultValue = false)
+        {
+            var value = GetGameIniValue(content, key);
             if (value == null) return defaultValue;
             return value.ToLower() == "true";
         }
