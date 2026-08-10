@@ -67,6 +67,23 @@ namespace IsleServerLauncher
             OwnerWindow?.AddCustomDino();
         }
 
+        private void btnAddAi_Click(object sender, RoutedEventArgs e)
+        {
+            OwnerWindow?.AddCustomAi();
+        }
+
+        private void btnRemoveAi_Click(object sender, RoutedEventArgs e)
+        {
+            OwnerWindow?.RemoveCustomAi();
+        }
+
+        private void txtAddAi_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            if (e.Key != System.Windows.Input.Key.Enter) return;
+            e.Handled = true;
+            OwnerWindow?.AddCustomAi();
+        }
+
         private void btnOpenModConfig_Click(object sender, RoutedEventArgs e)
         {
             OwnerWindow?.btnOpenModConfig_Click(sender, e);

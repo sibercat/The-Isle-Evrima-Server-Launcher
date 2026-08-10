@@ -64,6 +64,7 @@ namespace IsleServerLauncher
             "txtWhitelistId",
             "txtLiveAIDensity",
             "txtAddDino",
+            "txtAddAi",
             "chkMonitorGlobal",
             "chkMonitorSpatial",
             "chkMonitorAdmin"
@@ -451,6 +452,112 @@ namespace IsleServerLauncher
         private void ClearDinoSearchFilter()
         {
             if (txtDinoSearch.Text.Length > 0) txtDinoSearch.Clear();
+        }
+
+        private void ClearAiSearchFilter()
+        {
+            if (txtAiSearch.Text.Length > 0) txtAiSearch.Clear();
+        }
+
+        /// <summary>
+        /// Adds an AI type the launcher doesn't ship with, or a corrected spelling of one it does.
+        /// </summary>
+        /// <remarks>
+        /// The built-in names are display labels ("Chickens", "Frogs/Toads") and the identifiers
+        /// the server matches against live in level data that can't be read from the SDK dump, so
+        /// some of them are probably wrong. Rather than guess and ship a name that silently does
+        /// nothing, this lets an admin enter the identifier their server actually uses.
+        /// </remarks>
+        internal void AddCustomAi()
+        {
+            string name = txtAddAi.Text.Trim();
+            if (name.Length == 0)
+            {
+                ShowToast("Type an AI name first", true);
+                return;
+            }
+
+            if (!InputValidator.IsValidPlayableClassName(name, out string? error))
+            {
+                MessageBox.Show(
+                    $"{error}.\n\nUse the exact identifier from Game.ini, for example: Chicken",
+                    "Invalid Name", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            if (lstDisallowedAI.ItemsSource is not List<AiOption> ai)
+            {
+                _logger.Warning("Cannot add AI type: the AI list is not available.");
+                return;
+            }
+
+            if (ai.Any(a => a.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+            {
+                ShowToast($"{name} is already in the list", true);
+                txtAddAi.Clear();
+                return;
+            }
+
+            // Ticked on the way in: adding one is a deliberate act, and the point of adding it is
+            // to disallow that AI.
+            ai.Add(new AiOption { Name = name, IsEnabled = true });
+            txtAddAi.Clear();
+            ClearAiSearchFilter();
+            lstDisallowedAI.Items.Refresh();
+            UpdateDirtyState();
+
+            _logger.Info($"User added custom AI class '{name}'.");
+            ShowToast($"Added {name} - remember to Save");
+        }
+
+        /// <summary>
+        /// Removes an AI type that was added by hand. Built-in ones are rebuilt from the
+        /// list on every load, so removing them would only look like it worked.
+        /// </summary>
+        internal void RemoveCustomAi()
+        {
+            if (lstDisallowedAI.ItemsSource is not List<AiOption> ai) return;
+
+            // Typed name wins over the selection, for the same reason as the species list: a row
+            // can be selected incidentally, and that would hijack the button onto the wrong entry.
+            AiOption? selected;
+            string typed = txtAddAi.Text.Trim();
+            if (typed.Length > 0)
+            {
+                selected = ai.FirstOrDefault(a => a.Name.Equals(typed, StringComparison.OrdinalIgnoreCase));
+                if (selected == null)
+                {
+                    ShowToast($"{typed} is not in the list", true);
+                    return;
+                }
+            }
+            else
+            {
+                selected = lstDisallowedAI.SelectedItem as AiOption;
+            }
+
+            if (selected == null)
+            {
+                ShowToast("Type an AI name, or select one in the list, then press Remove", true);
+                return;
+            }
+
+            if (_allAI.Any(a => a.Equals(selected.Name, StringComparison.OrdinalIgnoreCase)))
+            {
+                MessageBox.Show(
+                    $"{selected.Name} ships with the launcher and can't be removed.\n\nUntick it instead to allow it on your server.",
+                    "Built-in AI Type", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            ai.Remove(selected);
+            txtAddAi.Clear();
+            ClearAiSearchFilter();
+            lstDisallowedAI.Items.Refresh();
+            UpdateDirtyState();
+
+            _logger.Info($"User removed custom AI class '{selected.Name}'.");
+            ShowToast($"Removed {selected.Name} - remember to Save");
         }
 
         private void InitializeDisallowedAiList()

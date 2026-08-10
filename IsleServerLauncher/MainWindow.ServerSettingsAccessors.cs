@@ -92,6 +92,9 @@ namespace IsleServerLauncher
         private WpfTextBox txtAddDino => serverSettingsView.txtAddDino;
         private WpfTextBox txtDinoSearch => serverSettingsView.txtDinoSearch;
         private ListBox lstDinos => serverSettingsView.lstDinos;
+
+        private WpfTextBox txtAddAi => serverSettingsView.txtAddAi;
+        private WpfTextBox txtAiSearch => serverSettingsView.txtAiSearch;
         private ListBox lstDisallowedAI => serverSettingsView.lstDisallowedAI;
     }
 }

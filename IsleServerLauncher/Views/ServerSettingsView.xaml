@@ -814,6 +814,44 @@
                                             Style="{StaticResource ModernButtonStyle}" />
                                     </StackPanel>
                                 </Grid>
+                                <TextBlock
+                                    Margin="0,0,0,2"
+                                    DockPanel.Dock="Top"
+                                    FontSize="11"
+                                    FontWeight="Normal"
+                                    Foreground="Gray"
+                                    TextWrapping="Wrap"
+                                    Text="Name not right? Type the exact identifier the server uses (e.g. Chicken) and press Add." />
+                                <Grid Margin="0,0,0,10" DockPanel.Dock="Top">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox
+                                        x:Name="txtAddAi"
+                                        MaxLength="64"
+                                        KeyDown="txtAddAi_KeyDown"
+                                        ToolTip="Add an AI type the launcher doesn't ship with, or a corrected spelling of one it does. Type the exact identifier used in Game.ini (for example: Chicken) and press Add." />
+                                    <StackPanel
+                                        Grid.Column="1"
+                                        Margin="10,0,0,0"
+                                        Orientation="Horizontal">
+                                        <!--  No fixed Width: ModernButtonStyle adds 15px side padding, which clips short labels  -->
+                                        <Button
+                                            MinWidth="60"
+                                            Margin="0,0,5,0"
+                                            Click="btnAddAi_Click"
+                                            Content="Add"
+                                            Style="{StaticResource ModernButtonStyle}"
+                                            ToolTip="Add the typed AI type to the list." />
+                                        <Button
+                                            MinWidth="60"
+                                            Click="btnRemoveAi_Click"
+                                            Content="Remove"
+                                            Style="{StaticResource ModernButtonStyle}"
+                                            ToolTip="Remove an AI type you added. Type its name above (or select it in the list) and press Remove. Built-in entries can't be removed - untick them instead." />
+                                    </StackPanel>
+                                </Grid>
                                 <ListBox
                                     x:Name="lstDisallowedAI"
                                     Height="140"
