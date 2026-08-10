@@ -193,8 +193,8 @@ namespace IsleServerLauncher.Services
         private const string StateSection = "/Script/TheIsle.TIGameStateBase";
 
         // Same character set the add-species dialog enforces, so a name read back from Game.ini
-        // is one the launcher could also have produced. Length is left to SanitizeIniListEntry:
-        // rejecting an over-long name outright would delete it from Game.ini on the next save.
+        // is one the launcher could also have produced. Length is deliberately not capped: the
+        // value is written back verbatim and these characters can't corrupt the file.
         private static readonly Regex LeadingClassName =
             new Regex("^" + InputValidator.PlayableClassNamePattern, RegexOptions.Compiled);
         private static readonly Regex LeadingDigits = new Regex(@"^\d+", RegexOptions.Compiled);
@@ -645,6 +645,13 @@ namespace IsleServerLauncher.Services
                 UpdateIniValue(lines, section, "bEnableHumans", config.Humans.ToString().ToLower());
                 UpdateIniValue(lines, section, "bEnableMutations", config.Mutations.ToString().ToLower());
                 UpdateIniValue(lines, section, "bEnableGlobalChat", config.GlobalChat.ToString().ToLower());
+
+                // bServerGlobalChat is a legacy spelling the loader still ORs in, but no class in
+                // the SDK dump declares it, so the game ignores it. Left in place it would win
+                // that OR forever and Global Chat could never be turned off: the save wrote
+                // bEnableGlobalChat=false and the next load read the stale true. Its value has
+                // already been migrated into config.GlobalChat above, so drop it.
+                UpdateIniValue(lines, section, "bServerGlobalChat", null);
                 UpdateIniValue(lines, section, "bEnableMigration", config.Migration.ToString().ToLower());
                 UpdateIniValue(lines, section, "bServerFallDamage", config.FallDamage.ToString().ToLower());
                 UpdateIniValue(lines, section, "GrowthMultiplier", InputValidator.NormalizeNumberForConfig(config.GrowthMultiplier));
@@ -1024,22 +1031,35 @@ namespace IsleServerLauncher.Services
                 if (inSection && TryMatchIniKey(line, key, out _)) keyIdxs.Add(i);
             }
 
-            // Drop the extras first so the surviving index stays valid.
-            for (int k = keyIdxs.Count - 1; k >= 1; k--)
+            // Collapse onto the LAST occurrence. A repeated assignment overwrites the earlier
+            // one, so the last is the value the server is actually running with; keeping any
+            // other would silently change the server's behaviour while tidying the file. The
+            // reader picks the last match for the same reason - the two must not disagree.
+            int keepIdx = keyIdxs.Count > 0 ? keyIdxs[keyIdxs.Count - 1] : -1;
+
+            if (keyIdxs.Count > 1)
+            {
+                _logger.Warning($"Game.ini defines '{key}' {keyIdxs.Count} times under " +
+                                $"[{section}]. Keeping the last value, which is the one the " +
+                                "server uses, and removing the earlier copies.");
+            }
+
+            for (int k = keyIdxs.Count - 2; k >= 0; k--)
             {
                 lines.RemoveAt(keyIdxs[k]);
+                if (keyIdxs[k] < keepIdx) keepIdx--;
                 if (keyIdxs[k] < endOfFirstBlock) endOfFirstBlock--;
             }
 
             if (value == null)
             {
-                if (keyIdxs.Count > 0)
-                    lines.RemoveAt(keyIdxs[0]);
+                if (keepIdx != -1)
+                    lines.RemoveAt(keepIdx);
             }
             else
             {
-                if (keyIdxs.Count > 0)
-                    lines[keyIdxs[0]] = $"{key}={value}";
+                if (keepIdx != -1)
+                    lines[keepIdx] = $"{key}={value}";
                 else
                     lines.Insert(endOfFirstBlock, $"{key}={value}");
             }
@@ -1299,11 +1319,25 @@ namespace IsleServerLauncher.Services
         }
 
         /// <summary>
-        /// True if a raw ini value yields at least one usable entry, and so can safely be
-        /// rewritten. Lines that fail this are left in the file untouched.
+        /// True only if every entry on the line was understood, so replacing it loses nothing.
+        /// Lines that fail this are left in the file untouched.
         /// </summary>
-        private static bool IsRewritable(string rawValue, Regex leading) =>
-            ParseIniTokens(new[] { rawValue }, leading).Count > 0;
+        /// <remarks>
+        /// "At least one entry parsed" is not good enough: removal works on whole lines, so a
+        /// mixed "AdminsSteamIDs=76561198000000001,STEAM_0:1:5" would be deleted for the sake of
+        /// the id that parsed and the other would be gone. Keeping the line instead can leave
+        /// the parsed entry listed twice, which is harmless in a list the game de-duplicates by
+        /// meaning, whereas the deletion is not recoverable.
+        /// </remarks>
+        private static bool IsRewritable(string rawValue, Regex leading)
+        {
+            var parts = rawValue.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+
+            // Nothing on the line to lose - let the rewrite replace it.
+            if (parts.Length == 0) return true;
+
+            return parts.All(part => ParseIniTokens(new[] { part }, leading).Count > 0);
+        }
 
         /// <summary>
         /// Reads a single-valued key, accepting the same line shapes UpdateIniValue writes and
@@ -1318,6 +1352,7 @@ namespace IsleServerLauncher.Services
         private string? GetConfigValue(string content, string key, string? section = null)
         {
             string? currentSection = null;
+            string? lastMatch = null;
 
             foreach (var rawLine in content.Split('\n'))
             {
@@ -1343,10 +1378,12 @@ namespace IsleServerLauncher.Services
                 if (value.Length >= 2 && value.StartsWith("\"") && value.EndsWith("\""))
                     value = value.Substring(1, value.Length - 2);
 
-                return value.Trim();
+                // Keep looking: a later assignment overwrites an earlier one, so the last match
+                // is the value in force. UpdateIniValue collapses duplicates onto the same one.
+                lastMatch = value.Trim();
             }
 
-            return null;
+            return lastMatch;
         }
 
         private bool GetBoolValue(string content, string key, bool defaultValue = false)

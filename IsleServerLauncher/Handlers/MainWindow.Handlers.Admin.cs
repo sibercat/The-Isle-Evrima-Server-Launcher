@@ -353,8 +353,9 @@ namespace IsleServerLauncher
 
         private async void btnSetAIDensity_Click(object sender, RoutedEventArgs e)
         {
-            // Accept either decimal separator: a current-culture-only parse reads "1.5" as 15
-            // on locales that treat '.' as a group separator.
+            // Accept either decimal separator: a current-culture-only parse rejects "1.5"
+            // outright on locales where the separator is a comma, so the button would just
+            // report invalid input for a value the admin typed the usual way.
             // Bounds matter as well as parseability: NumberStyles.Float happily accepts
             // "NaN" and "Infinity", which would go straight out over RCON.
             if (InputValidator.TryParseUserNumber(txtLiveAIDensity.Text, out double d)
