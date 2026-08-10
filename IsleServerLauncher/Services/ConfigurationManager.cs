@@ -192,18 +192,21 @@ namespace IsleServerLauncher.Services
         private const string SessionSection = "/Script/TheIsle.TIGameSession";
         private const string StateSection = "/Script/TheIsle.TIGameStateBase";
 
-        // Same character set the add-species dialog enforces, so a name read back from Game.ini
-        // is one the launcher could also have produced. Length is deliberately not capped: the
-        // value is written back verbatim and these characters can't corrupt the file.
-        private static readonly Regex LeadingClassName =
-            new Regex("^" + InputValidator.PlayableClassNamePattern, RegexOptions.Compiled);
-        private static readonly Regex LeadingDigits = new Regex(@"^\d+", RegexOptions.Compiled);
+        // These decide what the UI is allowed to represent, and they are anchored on purpose: an
+        // entry is shown only when the WHOLE value is something the game can act on. Matching a
+        // prefix instead would surface "AllowedClasses=BP_Deer.BP_Deer_C" as "BP_Deer" and save
+        // it back truncated, and would list "AdminsSteamIDs=<id> (Bob)" as a live admin when the
+        // game reads that entire string as the ID and grants Bob nothing. Values that don't
+        // match are carried through untouched instead - see SplitIniEntries.
+        private static readonly Regex ClassNameEntry =
+            new Regex("^" + InputValidator.PlayableClassNamePattern + "$", RegexOptions.Compiled);
+        private static readonly Regex SteamIdEntry = new Regex(@"^\d+$", RegexOptions.Compiled);
 
         // AI class identifiers can't be pattern-checked - they are FNames from level data that
         // the SDK dump doesn't expose, and the built-in list holds labels like "Frogs/Toads".
         // So accept anything that wouldn't corrupt the file if written back out.
-        private static readonly Regex LeadingAiClassName =
-            new Regex(@"^[^=\[\]()""\r\n]+", RegexOptions.Compiled);
+        private static readonly Regex AiClassEntry =
+            new Regex(@"^[^=\[\]()""\r\n]+$", RegexOptions.Compiled);
 
         private readonly string _serverFolder;
         private readonly string _configPath;
@@ -306,9 +309,10 @@ namespace IsleServerLauncher.Services
                 // commas too and existing selections survive the upgrade.
                 // Read only the sections the save path rewrites - the session section where it
                 // belongs, plus the state section older versions wrongly wrote it to.
-                var disallowed = ParseIniTokens(
+                var disallowed = SplitIniEntries(
                         ReadIniValuesInSections(content, "DisallowedAIClasses", SessionSection, StateSection),
-                        LeadingAiClassName)
+                        AiClassEntry)
+                    .Recognised
                     .Distinct(StringComparer.OrdinalIgnoreCase);
 
                 foreach (var name in disallowed)
@@ -708,17 +712,21 @@ namespace IsleServerLauncher.Services
                     .Select(d => $"AllowedClasses={d.Name}")
                     .ToList();
 
-                // Each rewrite is limited to lines the loader could actually read, so a value it
-                // skipped - a legacy "STEAM_0:1:..." id, an asset path - is preserved rather
-                // than deleted behind the admin's back.
-                UpdateIniList(lines, stateSection, "AdminsSteamIDs", adminList,
-                              v => IsRewritable(v, LeadingDigits));
-                UpdateIniList(lines, stateSection, "WhitelistIDs", whitelistList,
-                              v => IsRewritable(v, LeadingDigits));
-                UpdateIniList(lines, stateSection, "VIPs", vipList,
-                              v => IsRewritable(v, LeadingDigits));
-                UpdateIniList(lines, stateSection, "AllowedClasses", dinoList,
-                              v => IsRewritable(v, LeadingClassName));
+                // Values the loader didn't recognise were never shown in the UI, so they aren't in
+                // the lists above - carry them over from the file being rewritten. Reading them
+                // back here rather than off the config object means no UI code path can drop
+                // them. Every line for the key is then replaced, which is what keeps entries the
+                // admin CAN see removable.
+                string existing = string.Join("\n", lines);
+                adminList.AddRange(PreservedEntries(existing, "AdminsSteamIDs", stateSection, SteamIdEntry));
+                whitelistList.AddRange(PreservedEntries(existing, "WhitelistIDs", stateSection, SteamIdEntry));
+                vipList.AddRange(PreservedEntries(existing, "VIPs", stateSection, SteamIdEntry));
+                dinoList.AddRange(PreservedEntries(existing, "AllowedClasses", stateSection, ClassNameEntry));
+
+                UpdateIniList(lines, stateSection, "AdminsSteamIDs", adminList);
+                UpdateIniList(lines, stateSection, "WhitelistIDs", whitelistList);
+                UpdateIniList(lines, stateSection, "VIPs", vipList);
+                UpdateIniList(lines, stateSection, "AllowedClasses", dinoList);
 
                 // DisallowedAIClasses is a Config TArray<FString> on TIGameSession - not
                 // TIGameStateBase - so it belongs in the session section and must be written
@@ -729,15 +737,16 @@ namespace IsleServerLauncher.Services
                     .Where(ai => ai.IsEnabled)
                     .Select(ai => $"DisallowedAIClasses={ai.Name}")
                     .ToList();
-                UpdateIniList(lines, section, "DisallowedAIClasses", disallowedAiList,
-                              v => IsRewritable(v, LeadingAiClassName));
+                disallowedAiList.AddRange(
+                    PreservedEntries(existing, "DisallowedAIClasses", AiClassEntry, section, stateSection));
+
+                UpdateIniList(lines, section, "DisallowedAIClasses", disallowedAiList);
 
                 // Drop every misplaced legacy line so none can shadow the correct ones.
                 // UpdateIniValue(null) would only remove the first match, and the loader
                 // reads all DisallowedAIClasses lines, so leftovers would re-tick classes
                 // the user just unticked.
-                UpdateIniList(lines, stateSection, "DisallowedAIClasses", new List<string>(),
-                              v => IsRewritable(v, LeadingAiClassName));
+                UpdateIniList(lines, stateSection, "DisallowedAIClasses", new List<string>());
 
                 File.WriteAllLines(_configPath, lines);
                 _logger.Debug("Game.ini updated successfully");
@@ -1020,7 +1029,7 @@ namespace IsleServerLauncher.Services
             {
                 string line = lines[i].Trim();
 
-                if (line.StartsWith("[") && line.EndsWith("]"))
+                if (TryGetSectionName(line, out _))
                 {
                     inSection = IsSectionHeader(lines[i], section);
                     if (!inSection && endOfFirstBlock == lines.Count && i > sectionIdx)
@@ -1068,13 +1077,13 @@ namespace IsleServerLauncher.Services
         /// <summary>
         /// Safely updates or replaces a list of INI values (like AllowedClasses)
         /// </summary>
-        /// <param name="canRewrite">
-        /// Guards deletion: a line whose value the loader could not parse is not represented in
-        /// <paramref name="newValues"/>, so removing it would erase config that was never shown
-        /// in the UI. Such lines are left exactly as they are.
-        /// </param>
+        /// <remarks>
+        /// Every line for the key is replaced, so <paramref name="newValues"/> must already
+        /// include the entries the loader preserved verbatim as well as the ones the UI owns.
+        /// Skipping lines here instead would make an entry shown in the UI impossible to delete.
+        /// </remarks>
         private void UpdateIniList(List<string> lines, string section, string keyPrefix,
-                                   List<string> newValues, Func<string, bool>? canRewrite = null)
+                                   List<string> newValues)
         {
             // A section can appear more than once; UE merges the blocks and so does the reader.
             // Purging only the first block would leave entries the loader still sees, so a
@@ -1087,18 +1096,14 @@ namespace IsleServerLauncher.Services
             {
                 string trimmed = lines[i].Trim();
 
-                if (trimmed.StartsWith("[") && trimmed.EndsWith("]"))
+                if (TryGetSectionName(trimmed, out _))
                 {
                     inSection = IsSectionHeader(lines[i], section);
                     if (inSection && firstSectionIdx == -1) firstSectionIdx = i;
                     continue;
                 }
 
-                if (inSection && TryMatchIniKey(trimmed, keyPrefix, out string existing) &&
-                    (canRewrite == null || canRewrite(existing)))
-                {
-                    staleKeyLines.Add(i);
-                }
+                if (inSection && TryMatchIniKey(trimmed, keyPrefix, out _)) staleKeyLines.Add(i);
             }
 
             if (firstSectionIdx == -1)
@@ -1115,8 +1120,7 @@ namespace IsleServerLauncher.Services
             int insertAt = lines.Count;
             for (int i = firstSectionIdx + 1; i < lines.Count; i++)
             {
-                string line = lines[i].Trim();
-                if (line.StartsWith("[") && line.EndsWith("]"))
+                if (TryGetSectionName(lines[i], out _))
                 {
                     insertAt = i;
                     break;
@@ -1138,8 +1142,8 @@ namespace IsleServerLauncher.Services
         /// </summary>
         private static List<string> ExtractAllowedClasses(string content)
         {
-            return ParseIniTokens(ReadIniValuesInSections(content, "AllowedClasses", StateSection),
-                                  LeadingClassName);
+            return SplitIniEntries(ReadIniValuesInSections(content, "AllowedClasses", StateSection),
+                                   ClassNameEntry).Recognised;
         }
 
         /// <summary>
@@ -1175,9 +1179,9 @@ namespace IsleServerLauncher.Services
             {
                 string line = rawLine.Trim();
 
-                if (line.StartsWith("[") && line.EndsWith("]"))
+                if (TryGetSectionName(line, out string header))
                 {
-                    currentSection = line.Substring(1, line.Length - 2).Trim();
+                    currentSection = header;
                     continue;
                 }
 
@@ -1198,41 +1202,86 @@ namespace IsleServerLauncher.Services
         /// place - so unticking a species or deleting an admin appears to work and then comes
         /// back on the next load.
         /// </summary>
-        private static bool IsSectionHeader(string line, string section)
-        {
-            string trimmed = line.Trim();
-            if (!trimmed.StartsWith("[") || !trimmed.EndsWith("]")) return false;
+        private static bool IsSectionHeader(string line, string section) =>
+            TryGetSectionName(line, out string name) &&
+            name.Equals(section, StringComparison.OrdinalIgnoreCase);
 
-            return trimmed.Substring(1, trimmed.Length - 2).Trim()
-                .Equals(section, StringComparison.OrdinalIgnoreCase);
+        /// <summary>
+        /// Extracts the section name from a header line, or false if the line isn't one.
+        /// </summary>
+        /// <remarks>
+        /// Only the bracketed part counts; UE ignores whatever follows, so
+        /// "[/Script/TheIsle.TIGameStateBase] ; my admins" is still that section. Requiring the
+        /// line to end in "]" hid such a section from the readers while the server still honoured
+        /// it - the UI showed no admins at all and the save appended a second header.
+        /// </remarks>
+        private static bool TryGetSectionName(string line, out string name)
+        {
+            name = "";
+
+            string trimmed = line.Trim();
+            if (!trimmed.StartsWith("[")) return false;
+
+            int close = trimmed.IndexOf(']');
+            if (close < 1) return false;
+
+            name = trimmed.Substring(1, close - 1).Trim();
+            return name.Length > 0;
         }
 
         /// <summary>
-        /// Turns raw ini list values into clean entries, accepting every form the writer's
-        /// removal predicate also matches: quoted, parenthesised and comma-joined.
+        /// Splits raw ini list values into the entries the game can act on and the ones it
+        /// can't, accepting every form the writer also matches: quoted, parenthesised and
+        /// comma-joined.
         /// </summary>
         /// <remarks>
-        /// Parsing must never be stricter than removal. Any value this drops is still a line the
-        /// save can match and delete, so the entry would vanish from Game.ini without ever being
-        /// shown in the UI. That is why decoration is salvaged rather than rejected: a hand-
-        /// annotated "AdminsSteamIDs=7656... (Bob)" keeps its ID instead of costing Bob access.
+        /// This is the rule that keeps two promises at once. Everything in <c>Recognised</c> is
+        /// shown in the UI and rewritten from it, so it can always be removed. Everything in
+        /// <c>Preserved</c> is written back verbatim, so a value the launcher doesn't understand
+        /// - a legacy "STEAM_0:1:5", an asset path, a hand-written note - survives untouched
+        /// rather than being deleted for being unreadable. Neither list can silently lose data.
         /// </remarks>
-        private static List<string> ParseIniTokens(IEnumerable<string> rawValues, Regex leading)
+        private static (List<string> Recognised, List<string> Preserved) SplitIniEntries(
+            IEnumerable<string> rawValues, Regex entryPattern)
         {
-            var results = new List<string>();
+            var recognised = new List<string>();
+            var preserved = new List<string>();
 
             foreach (var value in rawValues)
             {
                 foreach (var part in value.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
                 {
-                    var entry = TakeLeadingToken(part.Trim().Trim('(', ')', '"').Trim(), leading);
-                    entry = entry?.Trim();
-                    if (!string.IsNullOrEmpty(entry)) results.Add(entry!);
+                    // Wrapper characters are stripped to recognise the value, but what gets
+                    // preserved is the original text - trimming first would write back a
+                    // "Deer (herbivore" that has lost its closing bracket.
+                    string original = part.Trim();
+                    string entry = original.Trim('(', ')', '"').Trim();
+                    if (entry.Length == 0) continue;
+
+                    if (entryPattern.IsMatch(entry)) recognised.Add(entry);
+                    else preserved.Add(original);
                 }
             }
 
-            return results;
+            return (recognised, preserved);
         }
+
+        /// <summary>
+        /// The entries for a key that the loader could not represent, formatted as ini lines so
+        /// the save can put them back exactly as they were.
+        /// </summary>
+        private static List<string> PreservedEntries(string content, string key, Regex entryPattern,
+                                                     params string[] sections)
+        {
+            return SplitIniEntries(ReadIniValuesInSections(content, key, sections), entryPattern)
+                .Preserved
+                .Select(value => $"{key}={value}")
+                .ToList();
+        }
+
+        private static List<string> PreservedEntries(string content, string key, string section,
+                                                     Regex entryPattern) =>
+            PreservedEntries(content, key, entryPattern, section);
 
         /// <summary>
         /// Reads a Steam ID list from the one section the game reads it from, keeping only
@@ -1240,7 +1289,8 @@ namespace IsleServerLauncher.Services
         /// </summary>
         private static List<string> ReadIniIdList(string content, string key, string section)
         {
-            return ParseIniTokens(ReadIniValuesInSections(content, key, section), LeadingDigits)
+            return SplitIniEntries(ReadIniValuesInSections(content, key, section), SteamIdEntry)
+                .Recognised
                 .Distinct(StringComparer.Ordinal)
                 .ToList();
         }
@@ -1303,9 +1353,9 @@ namespace IsleServerLauncher.Services
             foreach (var rawLine in content.Split('\n'))
             {
                 string line = rawLine.Trim();
-                if (line.StartsWith("[") && line.EndsWith("]"))
+                if (TryGetSectionName(line, out string header))
                 {
-                    currentSection = line.Substring(1, line.Length - 2).Trim();
+                    currentSection = header;
                     continue;
                 }
 
@@ -1316,27 +1366,6 @@ namespace IsleServerLauncher.Services
             }
 
             return results;
-        }
-
-        /// <summary>
-        /// True only if every entry on the line was understood, so replacing it loses nothing.
-        /// Lines that fail this are left in the file untouched.
-        /// </summary>
-        /// <remarks>
-        /// "At least one entry parsed" is not good enough: removal works on whole lines, so a
-        /// mixed "AdminsSteamIDs=76561198000000001,STEAM_0:1:5" would be deleted for the sake of
-        /// the id that parsed and the other would be gone. Keeping the line instead can leave
-        /// the parsed entry listed twice, which is harmless in a list the game de-duplicates by
-        /// meaning, whereas the deletion is not recoverable.
-        /// </remarks>
-        private static bool IsRewritable(string rawValue, Regex leading)
-        {
-            var parts = rawValue.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
-
-            // Nothing on the line to lose - let the rewrite replace it.
-            if (parts.Length == 0) return true;
-
-            return parts.All(part => ParseIniTokens(new[] { part }, leading).Count > 0);
         }
 
         /// <summary>
@@ -1358,9 +1387,9 @@ namespace IsleServerLauncher.Services
             {
                 string line = rawLine.Trim();
 
-                if (line.StartsWith("[") && line.EndsWith("]"))
+                if (TryGetSectionName(line, out string header))
                 {
-                    currentSection = line.Substring(1, line.Length - 2).Trim();
+                    currentSection = header;
                     continue;
                 }
 
