@@ -343,6 +343,11 @@ namespace IsleServerLauncher.Services
                 config.VipIds = ReadIniIdList(content, "VIPs", StateSection);
                 _logger.Debug($"Loaded {config.VipIds.Count} VIP IDs");
 
+                WarnAboutIgnoredSectionEntries(content, "AdminsSteamIDs");
+                WarnAboutIgnoredSectionEntries(content, "WhitelistIDs");
+                WarnAboutIgnoredSectionEntries(content, "VIPs");
+                WarnAboutIgnoredSectionEntries(content, "AllowedClasses");
+
                 // Load dinosaurs from launcher settings first (priority)
                 bool dinosLoadedFromSettings = false;
                 if (File.Exists(_settingsPath))
@@ -997,8 +1002,7 @@ namespace IsleServerLauncher.Services
                     break;
                 }
 
-                if (line.StartsWith(key + "=", StringComparison.OrdinalIgnoreCase) ||
-                    line.StartsWith(key + " =", StringComparison.OrdinalIgnoreCase))
+                if (TryMatchIniKey(line, key, out _))
                 {
                     keyIdx = i;
                     break;
@@ -1024,17 +1028,28 @@ namespace IsleServerLauncher.Services
         /// </summary>
         private void UpdateIniList(List<string> lines, string section, string keyPrefix, List<string> newValues)
         {
-            int sectionIdx = -1;
+            // A section can appear more than once; UE merges the blocks and so does the reader.
+            // Purging only the first block would leave entries the loader still sees, so a
+            // deleted admin ID or unticked species would quietly come back on the next load.
+            int firstSectionIdx = -1;
+            var staleKeyLines = new List<int>();
+            bool inSection = false;
+
             for (int i = 0; i < lines.Count; i++)
             {
-                if (IsSectionHeader(lines[i], section))
+                string trimmed = lines[i].Trim();
+
+                if (trimmed.StartsWith("[") && trimmed.EndsWith("]"))
                 {
-                    sectionIdx = i;
-                    break;
+                    inSection = IsSectionHeader(lines[i], section);
+                    if (inSection && firstSectionIdx == -1) firstSectionIdx = i;
+                    continue;
                 }
+
+                if (inSection && TryMatchIniKey(trimmed, keyPrefix, out _)) staleKeyLines.Add(i);
             }
 
-            if (sectionIdx == -1)
+            if (firstSectionIdx == -1)
             {
                 if (newValues.Count == 0) return;
                 if (lines.Count > 0 && !string.IsNullOrWhiteSpace(lines.Last()))
@@ -1044,29 +1059,25 @@ namespace IsleServerLauncher.Services
                 return;
             }
 
-            int nextSectionIdx = lines.Count;
-            for (int i = sectionIdx + 1; i < lines.Count; i++)
+            // Everything is rewritten into the first block, so find where that block ends.
+            int insertAt = lines.Count;
+            for (int i = firstSectionIdx + 1; i < lines.Count; i++)
             {
                 string line = lines[i].Trim();
                 if (line.StartsWith("[") && line.EndsWith("]"))
                 {
-                    nextSectionIdx = i;
+                    insertAt = i;
                     break;
                 }
             }
 
-            // Remove existing entries
-            for (int i = nextSectionIdx - 1; i > sectionIdx; i--)
+            for (int k = staleKeyLines.Count - 1; k >= 0; k--)
             {
-                if (TryMatchIniKey(lines[i].Trim(), keyPrefix, out _))
-                {
-                    lines.RemoveAt(i);
-                    nextSectionIdx--;
-                }
+                lines.RemoveAt(staleKeyLines[k]);
+                if (staleKeyLines[k] < insertAt) insertAt--;
             }
 
-            // Insert new values
-            lines.InsertRange(nextSectionIdx, newValues);
+            lines.InsertRange(insertAt, newValues);
         }
 
         /// <summary>
@@ -1075,11 +1086,8 @@ namespace IsleServerLauncher.Services
         /// </summary>
         private static List<string> ExtractAllowedClasses(string content)
         {
-            return ParseIniListEntries(ReadIniValuesInSections(content, "AllowedClasses", StateSection))
-                .Select(entry => TakeLeadingToken(entry, LeadingClassName))
-                .Where(name => name != null)
-                .Select(name => name!)
-                .ToList();
+            return ParseIniTokens(ReadIniValuesInSections(content, "AllowedClasses", StateSection),
+                                  LeadingClassName);
         }
 
         /// <summary>
@@ -1099,6 +1107,39 @@ namespace IsleServerLauncher.Services
         }
 
         /// <summary>
+        /// Logs a warning when a key appears outside the section its property is declared on.
+        /// </summary>
+        /// <remarks>
+        /// The game ignores those lines, so the launcher deliberately does not show them, move
+        /// them or delete them - moving one would turn a server that allows everything into a
+        /// restricted one on upgrade, and deleting it would throw away an admin's list. A log
+        /// line is enough to explain why an entry the admin can see in the file isn't in the UI.
+        /// </remarks>
+        private void WarnAboutIgnoredSectionEntries(string content, string key)
+        {
+            string? currentSection = null;
+
+            foreach (var rawLine in content.Split('\n'))
+            {
+                string line = rawLine.Trim();
+
+                if (line.StartsWith("[") && line.EndsWith("]"))
+                {
+                    currentSection = line.Substring(1, line.Length - 2).Trim();
+                    continue;
+                }
+
+                if (currentSection == null) continue;
+                if (currentSection.Equals(StateSection, StringComparison.OrdinalIgnoreCase)) continue;
+                if (!TryMatchIniKey(line, key, out _)) continue;
+
+                _logger.Warning($"Game.ini has '{key}' under [{currentSection}], but the game only " +
+                                $"reads it from [{StateSection}]. That line is ignored by the server " +
+                                "and is left untouched by the launcher.");
+            }
+        }
+
+        /// <summary>
         /// True if the line is the header for the given section. Readers and writers must use
         /// this one rule: if the reader recognises a header the writer doesn't, the save can't
         /// find the section, appends a duplicate at end of file and leaves the originals in
@@ -1115,15 +1156,16 @@ namespace IsleServerLauncher.Services
         }
 
         /// <summary>
-        /// Turns raw ini list values into usable entries, accepting every form the writer's
+        /// Turns raw ini list values into clean entries, accepting every form the writer's
         /// removal predicate also matches: quoted, parenthesised and comma-joined.
         /// </summary>
         /// <remarks>
-        /// Parsing must never be stricter than removal. A value this drops is still a line the
-        /// save can delete, so the entry would vanish from Game.ini without ever appearing in
-        /// the UI - which is how an admin's whole allow-list could be wiped in one save.
+        /// Parsing must never be stricter than removal. Any value this drops is still a line the
+        /// save can match and delete, so the entry would vanish from Game.ini without ever being
+        /// shown in the UI. That is why decoration is salvaged rather than rejected: a hand-
+        /// annotated "AdminsSteamIDs=7656... (Bob)" keeps its ID instead of costing Bob access.
         /// </remarks>
-        private static List<string> ParseIniListEntries(IEnumerable<string> rawValues)
+        private static List<string> ParseIniTokens(IEnumerable<string> rawValues, Regex leading)
         {
             var results = new List<string>();
 
@@ -1131,7 +1173,7 @@ namespace IsleServerLauncher.Services
             {
                 foreach (var part in value.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
                 {
-                    var entry = SanitizeIniListEntry(part);
+                    var entry = TakeLeadingToken(part.Trim().Trim('(', ')', '"').Trim(), leading);
                     if (entry != null) results.Add(entry);
                 }
             }
@@ -1145,10 +1187,7 @@ namespace IsleServerLauncher.Services
         /// </summary>
         private static List<string> ReadIniIdList(string content, string key, string section)
         {
-            return ParseIniListEntries(ReadIniValuesInSections(content, key, section))
-                .Select(entry => TakeLeadingToken(entry, LeadingDigits))
-                .Where(id => id != null)
-                .Select(id => id!)
+            return ParseIniTokens(ReadIniValuesInSections(content, key, section), LeadingDigits)
                 .Distinct(StringComparer.Ordinal)
                 .ToList();
         }
@@ -1238,14 +1277,32 @@ namespace IsleServerLauncher.Services
             return value.IndexOfAny(new[] { '=', '[', ']', '"', '(', ')', '\r' }) >= 0 ? null : value;
         }
 
+        /// <summary>
+        /// Reads a single-valued key, accepting the same line shapes UpdateIniValue writes and
+        /// matches: leading indent, and spaces or tabs around the "=".
+        /// </summary>
+        /// <remarks>
+        /// This reader used to demand the key at column zero with "=" immediately after it,
+        /// while the writer matched "Key =" too. A spaced "AIDensity = 3" therefore read as
+        /// absent, fell back to the default, and was rewritten as "AIDensity=1" - silently
+        /// resetting the operator's value on the next save.
+        /// </remarks>
         private string? GetConfigValue(string content, string key)
         {
-            var match = Regex.Match(
-                content,
-                $@"^{key}=""?([^""\r\n]*)""?",
-                RegexOptions.IgnoreCase | RegexOptions.Multiline);
+            foreach (var rawLine in content.Split('\n'))
+            {
+                if (!TryMatchIniKey(rawLine.Trim(), key, out string value)) continue;
 
-            return match.Success ? match.Groups[1].Value.Trim() : null;
+                value = value.Trim();
+
+                // Strip one matched pair of wrapping quotes, leaving any inside the value alone.
+                if (value.Length >= 2 && value.StartsWith("\"") && value.EndsWith("\""))
+                    value = value.Substring(1, value.Length - 2);
+
+                return value.Trim();
+            }
+
+            return null;
         }
 
         private bool GetBoolValue(string content, string key, bool defaultValue = false)
