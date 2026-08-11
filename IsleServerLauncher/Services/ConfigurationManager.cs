@@ -222,8 +222,21 @@ namespace IsleServerLauncher.Services
                 ["Crabs"] = "Crab",
             };
 
-        private static string MigrateAiName(string name) =>
-            LegacyAiNames.TryGetValue(name, out var current) ? current : name;
+        // Labels with no identifier behind them at all. "Various Fish" has a space and a plural,
+        // so it can never be an FName the game matches on, and there is no BP_AI fish controller
+        // for it to have come from. Dropping it beats leaving a tickbox that cannot do anything.
+        private static readonly HashSet<string> RetiredAiNames =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Various Fish" };
+
+        /// <summary>
+        /// Maps a stored AI name onto the identifier the game actually matches, or "" if the name
+        /// was a label that can never work and should be dropped.
+        /// </summary>
+        private static string MigrateAiName(string name)
+        {
+            if (RetiredAiNames.Contains(name)) return "";
+            return LegacyAiNames.TryGetValue(name, out var current) ? current : name;
+        }
 
         private readonly string _serverFolder;
         private readonly string _configPath;
@@ -331,6 +344,7 @@ namespace IsleServerLauncher.Services
                         AiClassEntry)
                     .Recognised
                     .Select(MigrateAiName)
+                    .Where(name => name.Length > 0)
                     .Distinct(StringComparer.OrdinalIgnoreCase);
 
                 foreach (var name in disallowed)
