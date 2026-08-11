@@ -208,6 +208,23 @@ namespace IsleServerLauncher.Services
         private static readonly Regex AiClassEntry =
             new Regex(@"^[^=\[\]()""\r\n]+$", RegexOptions.Compiled);
 
+        // Versions up to 1.0.11 shipped display labels here rather than the identifiers the game
+        // matches on, so these entries sat in Game.ini doing nothing. Confirmed on a live server
+        // that "Chicken" suppresses the spawn and "Chickens" does not. The admin's intent when
+        // they ticked the old label is unambiguous, so carry it across to the name that works
+        // instead of leaving a setting that silently fails.
+        private static readonly Dictionary<string, string> LegacyAiNames =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Chickens"] = "Chicken",
+                ["Turtles"] = "SeaTurtle",
+                ["Frogs/Toads"] = "Bullfrog",
+                ["Crabs"] = "Crab",
+            };
+
+        private static string MigrateAiName(string name) =>
+            LegacyAiNames.TryGetValue(name, out var current) ? current : name;
+
         private readonly string _serverFolder;
         private readonly string _configPath;
         private readonly string _engineConfigPath;
@@ -313,6 +330,7 @@ namespace IsleServerLauncher.Services
                         ReadIniValuesInSections(content, "DisallowedAIClasses", SessionSection, StateSection),
                         AiClassEntry)
                     .Recognised
+                    .Select(MigrateAiName)
                     .Distinct(StringComparer.OrdinalIgnoreCase);
 
                 foreach (var name in disallowed)
@@ -480,7 +498,7 @@ namespace IsleServerLauncher.Services
                     {
                         foreach (var raw in knownAi.Split(','))
                         {
-                            string name = raw.Trim();
+                            string name = MigrateAiName(raw.Trim());
                             if (name.Length == 0) continue;
                             if (config.DisallowedAIClasses.Any(a => a.Name.Equals(name, StringComparison.OrdinalIgnoreCase))) continue;
                             config.DisallowedAIClasses.Add(new AiOption { Name = name });

@@ -84,11 +84,16 @@ namespace IsleServerLauncher
             "Kentrosaurus", "Austroraptor"
         };
 
+        // Identifiers, not display labels. Confirmed on a live server that "Chicken" suppresses
+        // the spawn while "Chickens" does nothing, so these follow the same rule that name comes
+        // from: the genus in BP_AI_<Name>_Controller in the SDK dump. "Various Fish" is gone
+        // because no BP_AI fish controller exists - fish are BP_Fish_* assets with no AI
+        // controller, so that entry could never have matched anything.
         private readonly List<string> _allAI = new List<string>
         {
-            "Boar", "Rabbit", "Deer", "Goat", "Chickens",
-            "Turtles", "Frogs/Toads", "Various Fish", "Crabs",
-            "Pterodactylus", "Psittacosaurus"
+            "Boar", "Rabbit", "Deer", "Goat", "Chicken",
+            "SeaTurtle", "Bullfrog", "Crab",
+            "Pterodactylus", "Psittacosaurus", "Compsognathus"
         };
 
         public MainWindow()
