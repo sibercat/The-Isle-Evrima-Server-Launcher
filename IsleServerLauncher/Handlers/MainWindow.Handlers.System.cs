@@ -78,6 +78,178 @@ namespace IsleServerLauncher
             MessageBox.Show("1. Client stuck connecting? Run InstallAntiCheat.bat in game folder.\n2. SSL Errors? Use the Help menu SSL fix.", "Troubleshooting");
         }
 
+        /// <summary>
+        /// Shows a long-form guide in a scrollable window. MessageBox truncates awkwardly and
+        /// can't be scrolled, which makes it useless for anything step-by-step.
+        /// </summary>
+        private void ShowGuide(string title, string body)
+        {
+            var text = new TextBox
+            {
+                Text = body,
+                IsReadOnly = true,
+                TextWrapping = TextWrapping.Wrap,
+                BorderThickness = new Thickness(0),
+                Background = Brushes.Transparent,
+                Foreground = (Brush)FindResource("PrimaryTextBrush"),
+                // Fully qualified: System.Drawing is also in scope here and has its own FontFamily.
+                FontFamily = new System.Windows.Media.FontFamily("Consolas"),
+                FontSize = 12.5,
+                Margin = new Thickness(14),
+                // Selectable so an admin can copy a command straight out of the guide.
+                IsReadOnlyCaretVisible = true
+            };
+
+            var window = new Window
+            {
+                Title = title,
+                Width = 760,
+                Height = 660,
+                Owner = this,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Background = (Brush)FindResource("PanelBackgroundBrush"),
+                Content = new ScrollViewer
+                {
+                    Content = text,
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+                }
+            };
+
+            window.ShowDialog();
+        }
+
+        private void btnConnectionGuide_Click(object sender, RoutedEventArgs e)
+        {
+            ShowGuide("Can't Connect To Your Own Server?", ConnectionGuideText);
+        }
+
+        /// <summary>
+        /// Written from a real diagnosis. Evrima has no direct-connect and no console, so players
+        /// can only use the server browser and must accept whatever address EOS advertises - which
+        /// makes every network problem produce the same "Connection TIMED OUT" and sends admins
+        /// chasing the firewall when the cause is usually upstream of their router entirely.
+        /// </summary>
+        private const string ConnectionGuideText =
+@"CAN'T CONNECT TO YOUR OWN SERVER?
+
+If you see ""UNetConnection::Tick: Connection TIMED OUT"" after about 20
+seconds, the packets are not reaching your server. That is nearly always a
+network problem, not a server problem. Work through these in order.
+
+
+STEP 1 - IS THE SERVER ACTUALLY LISTENING?
+
+In PowerShell:
+
+    Get-NetUDPEndpoint | Where-Object LocalPort -eq 7777
+
+You should see 0.0.0.0:7777. If nothing appears, the server did not start or
+another program already holds the port - a second game server, for example.
+Only one program can use port 7777 at a time.
+
+
+STEP 2 - ARE YOU TESTING FROM THE SAME NETWORK AS THE SERVER?
+
+If you connect to your own public IP from inside your own network, most
+routers will not send that traffic back to you. This is called hairpin NAT
+or NAT loopback, and it only affects you - real players are unaffected.
+
+Other games let you work around it by typing a local address like
+192.168.x.x. The Isle: Evrima has no direct-connect box and no console, so
+you cannot. The server browser gives you the public address and that is the
+only address you get.
+
+Best test: have someone outside your network try to join. If they can, your
+server is fine and only your own connection is affected.
+
+
+STEP 3 - CHECK YOUR ROUTER'S WAN IP  (the one most people miss)
+
+Open your router's admin page and find the WAN / Internet IP address.
+
+If it starts with 100.64 through 100.127 - for example 100.82.129.139 -
+you are behind CARRIER-GRADE NAT (CGNAT). That address is not public. It
+belongs to your ISP, and their equipment drops incoming connections before
+they ever reach your router.
+
+If you are behind CGNAT:
+
+  * NO amount of port forwarding will work. Not on any router.
+  * Nobody can join your server, no matter how it is configured.
+  * The ""public IP"" you see in game belongs to your ISP and is shared
+    with other customers.
+
+Fix: phone your ISP and ask to be taken off CGNAT, or for a public IPv4
+address. It is often free or a small monthly fee. This is by far the
+easiest solution, and your existing port forwarding will then just work.
+
+
+WHAT DOES NOT WORK: INBOUND-ONLY TUNNELS
+
+Services such as playit.gg give you a public address that forwards traffic
+inward to your machine. That works for games where you hand players an
+address directly. It does NOT work for The Isle.
+
+The reason: your server announces itself to Epic Online Services, and EOS
+records whichever IP address it sees your server connect FROM. An
+inbound-only tunnel does not change outgoing traffic, so EOS still sees
+your CGNAT address and still tells players to connect there. The tunnel
+sits unused and players still cannot join. This has been tested.
+
+
+WHAT DOES WORK: A VPS PLUS WIREGUARD
+
+Rent a small server with a real public IP, run WireGuard on it, and route
+your game machine's traffic - BOTH directions - through it. Now EOS sees
+the VPS address and advertises that, and inbound traffic on port 7777 comes
+back down the tunnel to you.
+
+The difference from the tunnel services above is that outgoing traffic goes
+through the VPS too. That is the part that matters.
+
+Rough outline on the VPS (Ubuntu):
+
+    sudo apt install wireguard-tools
+    # wg0: Address 10.66.66.1/24, ListenPort 51820
+    # then, where ens5 is the VPS network interface:
+    iptables -t nat -A POSTROUTING -s 10.66.66.0/24 -o ens5 -j MASQUERADE
+    iptables -t nat -A PREROUTING -i ens5 -p udp --dport 7777 \
+             -j DNAT --to-destination 10.66.66.2:7777
+    iptables -t nat -A POSTROUTING -d 10.66.66.2 -p udp --dport 7777 \
+             -j MASQUERADE
+
+Install WireGuard on the machine running the server, set AllowedIPs to
+0.0.0.0/0, and open UDP 51820 and UDP 7777 in the VPS firewall. Confirm it
+worked by visiting any ""what is my IP"" site - it must show the VPS address.
+
+The last MASQUERADE rule is what lets you connect to your own server, so it
+solves the hairpin problem in Step 2 at the same time.
+
+Note this sends all of that machine's traffic through the VPS while the
+tunnel is active, which uses bandwidth. Turn it off when you are done.
+
+
+WHICH PORTS DO I ACTUALLY NEED?
+
+  UDP 7777   The game. This is the only one that matters.
+  UDP 10000  Login queue - ONLY if you set bQueueEnabled=true.
+             With the queue off, nothing listens on it.
+  TCP 8888   RCON. Do NOT expose this to the internet. Use it over a
+             private tunnel, or not at all.
+  UDP 27015  Steam query. Evrima lists through EOS, so this is not needed.
+
+
+STILL STUCK?
+
+Collect these before asking for help - they identify the problem quickly:
+
+  1. Your router's WAN IP  (tells us instantly if it is CGNAT)
+  2. Output of:  Get-NetUDPEndpoint | Where-Object LocalPort -eq 7777
+  3. Whether anyone OUTSIDE your network can connect
+  4. The full error text from the client
+";
+
         internal async void btnCheckUpdates_Click(object sender, RoutedEventArgs e)
         {
             if (sender is MenuItem item) item.IsEnabled = false;

@@ -43,6 +43,8 @@
                           ToolTip="Automatically check GitHub Releases when the launcher starts. You are only notified once per new version."/>
                 <Separator/>
                 <MenuItem Header="Troubleshooting Guide" Click="btnTroubleshooting_Click"/>
+                <MenuItem Header="Can't Connect To Your Own Server?" Click="btnConnectionGuide_Click"
+                          ToolTip="Connection times out? Work through hairpin NAT, CGNAT and port forwarding - the usual causes."/>
                 <MenuItem Header="About" Click="btnAbout_Click"/>
             </MenuItem>
         </Menu>
