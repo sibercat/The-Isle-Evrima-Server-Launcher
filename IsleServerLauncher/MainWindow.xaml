@@ -34,7 +34,7 @@
                 <MenuItem Header="Network Optimization Fix (Admin)" Click="btnNetworkFix_Click"
                           ToolTip="Fixes VirtIO/Packet Drops."/>
                 <MenuItem Header="Fix SSL Certificate Error (Admin)" Click="btnFixSSL_Click"
-                          ToolTip="Installs Amazon Root CA 1 to fix 'libcurl error 60' connecting to Epic Online Services."/>
+                          ToolTip="Checks Epic's certificates and installs missing Windows root certificates (fixes 'libcurl error 60' / 'Failed to create session')."/>
                 <Separator/>
                 <MenuItem Header="Check for Updates" Click="btnCheckUpdates_Click"
                           ToolTip="Check GitHub Releases for a newer version."/>

@@ -62,15 +62,86 @@ namespace IsleServerLauncher
 
         private async void btnFixSSL_Click(object sender, RoutedEventArgs e)
         {
-            if (MessageBox.Show("Install Amazon Root CA 1 to fix SSL errors?", "Confirm", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
+            var confirm = MessageBox.Show(
+                "Check whether this machine trusts Epic Online Services' certificates?\n\n" +
+                "The launcher connects to Epic's servers, which lets Windows add a missing trusted root " +
+                "certificate on its own. If that isn't enough, you will be asked before anything else is installed.",
+                "Fix SSL Certificate Error", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (confirm != MessageBoxResult.Yes) return;
+
+            if (!_systemSetup.IsAdministrator()) { MessageBox.Show("Run as Admin required.", "Error"); return; }
+
+            var menuItem = sender as MenuItem;
+            if (menuItem != null) menuItem.IsEnabled = false;
 
             try
             {
-                if (!_systemSetup.IsAdministrator()) { MessageBox.Show("Run as Admin required.", "Error"); return; }
-                await _systemSetup.FixSSLCertificateAsync();
-                ShowToast("✓ SSL Fix Applied");
+                ShowToast("Checking Epic certificates...");
+                _logger.Info("=== SSL certificate check started ===");
+
+                var rootsBefore = _systemSetup.GetMachineRootCertificates();
+                var results = await _systemSetup.CheckEpicCertificatesAsync();
+                RootInstallResult? install = null;
+                bool fallbackDeclined = false;
+
+                // The check is also the fix: Windows fetches a missing root while building the chain,
+                // which normally lands inside that same handshake. If the download was slower than
+                // the handshake, the first result can still say "not trusted" on a machine that is
+                // now fine, so re-check once when the store actually grew rather than asking for a
+                // machine-wide root install nobody needs.
+                if (results.Any(r => r.Connected && !r.Trusted) &&
+                    _systemSetup.GetMachineRootCertificates().Count != rootsBefore.Count)
+                {
+                    _logger.Info("Root store changed during the check; re-checking before offering the root install.");
+                    results = await _systemSetup.CheckEpicCertificatesAsync();
+                }
+
+                // Installing roots can only help a chain that arrived and wasn't trusted. A connection
+                // that never got that far is a network problem, and the report says so instead.
+                var untrusted = results.Where(r => r.Connected && !r.Trusted).Select(r => r.Host).ToList();
+                if (untrusted.Count > 0)
+                {
+                    var fallback = MessageBox.Show(
+                        $"Windows still doesn't trust the certificate from {string.Join(" and ", untrusted)}.\n\n" +
+                        "Install all of Microsoft's trusted root certificates from Windows Update? These are the " +
+                        "roots Windows already trusts; this adds them to the machine's Trusted Root store so the " +
+                        "game server can find them.\n\n" +
+                        "Choose No to see the details without installing anything.",
+                        "Install Trusted Root Certificates", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+
+                    if (fallback == MessageBoxResult.Yes)
+                    {
+                        ShowToast("Installing trusted root certificates...");
+                        install = await _systemSetup.InstallMicrosoftTrustedRootsAsync();
+                        results = await _systemSetup.CheckEpicCertificatesAsync();
+                    }
+                    else
+                    {
+                        fallbackDeclined = true;
+                        _logger.Info("User declined installing Microsoft trusted roots.");
+                    }
+                }
+
+                var rootsAfter = _systemSetup.GetMachineRootCertificates();
+                bool allTrusted = results.All(r => r.Trusted);
+                _logger.Info($"=== SSL certificate check finished: {(allTrusted ? "all endpoints trusted" : "NOT all endpoints trusted")}, " +
+                             $"machine root store {rootsBefore.Count} -> {rootsAfter.Count} ===");
+
+                string toast = allTrusted ? "✓ Epic certificates are trusted"
+                    : results.Any(r => r.Connected && !r.Trusted) ? "Epic certificates are still not trusted"
+                    : "Could not reach Epic - see the report";
+                ShowToast(toast, isError: !allTrusted);
+                ShowGuide("SSL Certificate Check", SystemSetupService.BuildCertificateReport(results, rootsBefore, rootsAfter, install, fallbackDeclined));
             }
-            catch (Exception ex) { MessageBox.Show($"SSL fix failed: {ex.Message}", "Error"); }
+            catch (Exception ex)
+            {
+                _logger.Error($"SSL certificate check failed: {ex.Message}", ex);
+                MessageBox.Show($"Certificate check failed: {ex.Message}", "Error");
+            }
+            finally
+            {
+                if (menuItem != null) menuItem.IsEnabled = true;
+            }
         }
 
         private void btnTroubleshooting_Click(object sender, RoutedEventArgs e)
