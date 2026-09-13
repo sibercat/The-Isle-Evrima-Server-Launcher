@@ -37,6 +37,13 @@ namespace IsleServerLauncher.Services
         public bool Trusted => Connected && PolicyErrors == SslPolicyErrors.None && RootInMachineStore;
     }
 
+    public enum CertificateVerdict
+    {
+        Trusted,
+        NotTrusted,
+        CouldNotCheck
+    }
+
     public class RootInstallResult
     {
         public bool Succeeded { get; init; }
@@ -191,16 +198,41 @@ Start-Sleep -Seconds 5";
             }
         }
 
+        /// <summary>Epic's API. It has to answer for the check to mean anything.</summary>
+        public const string EpicApiHost = "api.epicgames.dev";
+
         /// <summary>
-        /// The HTTPS endpoints the server must trust to create its EOS session: Epic's API and the
-        /// game's own backend. A machine that rejects either logs "libcurl error 60" followed by
-        /// "Failed to create session".
+        /// The game's own backend. Its certificate counts whenever it answers, but it is a third-party
+        /// hosting domain, so failing to reach it does not decide the result on its own.
         /// </summary>
-        public static readonly IReadOnlyList<string> EpicTlsEndpoints = new[]
+        public const string GameBackendHost = "api.warphosting.com.au";
+
+        /// <summary>
+        /// The HTTPS endpoints the server must trust to create its EOS session. A machine that
+        /// rejects either logs "libcurl error 60" followed by "Failed to create session".
+        /// </summary>
+        public static readonly IReadOnlyList<string> EpicTlsEndpoints = new[] { EpicApiHost, GameBackendHost };
+
+        /// <summary>
+        /// The one overall result, shared by the report and the toast so they can never disagree.
+        /// </summary>
+        public static CertificateVerdict GetVerdict(IEnumerable<TlsTrustResult> results)
         {
-            "api.epicgames.dev",
-            "api.warphosting.com.au"
-        };
+            var list = results.ToList();
+
+            // A certificate that arrived and was rejected is a real fault on any endpoint: both use
+            // the same chain today, and the root install fixes both.
+            if (list.Any(r => r.Connected && !r.Trusted)) return CertificateVerdict.NotTrusted;
+
+            // Only Epic's API has to answer. If the backend's domain moves or goes down while Epic's
+            // certificate checks out, this machine's certificates are still fine, and a red result
+            // would send the admin after the wrong problem. The report still names the host.
+            if (list.Any(r => !r.Connected && r.Host.Equals(EpicApiHost, StringComparison.OrdinalIgnoreCase)))
+                return CertificateVerdict.CouldNotCheck;
+            if (!list.Any(r => r.Connected)) return CertificateVerdict.CouldNotCheck;
+
+            return CertificateVerdict.Trusted;
+        }
 
         /// <summary>
         /// Handshakes with each Epic endpoint through Windows' own TLS stack and reports whether this
@@ -509,19 +541,21 @@ Start-Sleep -Seconds 5";
             bool fallbackDeclined)
         {
             var sb = new StringBuilder();
-            bool allTrusted = results.All(r => r.Trusted);
-            bool anyRejected = results.Any(r => r.Connected && !r.Trusted);
+            var verdict = GetVerdict(results);
+            var unreachable = results.Where(r => !r.Connected).ToList();
             var added = rootsAfter.Where(root => !rootsBefore.ContainsKey(root.Key)).ToList();
 
             sb.AppendLine("EPIC CERTIFICATE CHECK");
             sb.AppendLine();
             // An endpoint that was never reached had no certificate to judge. Saying "not trusted"
             // there would send an admin after certificates when the problem is the connection.
-            sb.AppendLine(allTrusted
-                ? "RESULT: TRUSTED. This machine trusts every Epic endpoint."
-                : anyRejected
-                    ? "RESULT: NOT FIXED. At least one Epic endpoint is still not trusted."
-                    : "RESULT: COULD NOT CHECK. An Epic endpoint could not be reached, so its certificate was never seen.");
+            sb.AppendLine(verdict switch
+            {
+                CertificateVerdict.Trusted when unreachable.Count == 0 => "RESULT: TRUSTED. This machine trusts every Epic endpoint.",
+                CertificateVerdict.Trusted => "RESULT: TRUSTED. This machine trusts Epic's certificates.",
+                CertificateVerdict.NotTrusted => "RESULT: NOT FIXED. At least one Epic endpoint is still not trusted.",
+                _ => "RESULT: COULD NOT CHECK. Epic's API could not be reached, so its certificate was never seen."
+            });
             sb.AppendLine();
             sb.AppendLine();
 
@@ -578,7 +612,7 @@ Start-Sleep -Seconds 5";
             sb.AppendLine("WHAT TO DO NEXT");
             sb.AppendLine();
 
-            if (allTrusted)
+            if (verdict == CertificateVerdict.Trusted)
             {
                 if (added.Count > 0)
                 {
@@ -590,10 +624,18 @@ Start-Sleep -Seconds 5";
                     sb.AppendLine("  Nothing needed fixing: this machine already trusted Epic's certificates,");
                     sb.AppendLine("  so certificates are not what stops the server creating its session.");
                 }
+
+                foreach (var r in unreachable)
+                {
+                    sb.AppendLine();
+                    sb.AppendLine($"  {r.Host} could not be reached, so it was not checked. If the server");
+                    sb.AppendLine("  still fails to create its session, check this machine's internet access,");
+                    sb.AppendLine("  DNS and firewall (outbound TCP 443).");
+                }
                 return sb.ToString();
             }
 
-            foreach (var r in results.Where(r => !r.Connected))
+            foreach (var r in unreachable)
             {
                 sb.AppendLine($"  {r.Host} could not be reached.");
                 sb.AppendLine("  Check this machine's internet access, DNS and firewall (outbound TCP 443).");

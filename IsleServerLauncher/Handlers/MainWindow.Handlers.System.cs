@@ -123,14 +123,17 @@ namespace IsleServerLauncher
                 }
 
                 var rootsAfter = _systemSetup.GetMachineRootCertificates();
-                bool allTrusted = results.All(r => r.Trusted);
-                _logger.Info($"=== SSL certificate check finished: {(allTrusted ? "all endpoints trusted" : "NOT all endpoints trusted")}, " +
+                var verdict = SystemSetupService.GetVerdict(results);
+                _logger.Info($"=== SSL certificate check finished: {verdict}, " +
                              $"machine root store {rootsBefore.Count} -> {rootsAfter.Count} ===");
 
-                string toast = allTrusted ? "✓ Epic certificates are trusted"
-                    : results.Any(r => r.Connected && !r.Trusted) ? "Epic certificates are still not trusted"
-                    : "Could not reach Epic - see the report";
-                ShowToast(toast, isError: !allTrusted);
+                string toast = verdict switch
+                {
+                    CertificateVerdict.Trusted => "✓ Epic certificates are trusted",
+                    CertificateVerdict.NotTrusted => "Epic certificates are still not trusted",
+                    _ => "Could not reach Epic - see the report"
+                };
+                ShowToast(toast, isError: verdict != CertificateVerdict.Trusted);
                 ShowGuide("SSL Certificate Check", SystemSetupService.BuildCertificateReport(results, rootsBefore, rootsAfter, install, fallbackDeclined));
             }
             catch (Exception ex)
